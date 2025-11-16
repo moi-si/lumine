@@ -14,9 +14,9 @@ import (
 
 type Policy struct {
 	ReplyFirst *bool   `json:"reply_first"`
-	Host       string  `json:"host"`
-	MapTo      string  `json:"map_to"`
-	Port       uint16  `json:"port"`
+	Host       *string  `json:"host"`
+	MapTo      *string  `json:"map_to"`
+	Port       *uint16  `json:"port"`
 	DNSRetry   *bool   `json:"dns_retry"`
 	IPv6First  *bool   `json:"ipv6_first"`
 	HttpStatus int     `json:"http_status"`
@@ -31,10 +31,10 @@ type Policy struct {
 func (p Policy) String() string {
 	fields := []string{}
 	var addr string
-	if p.Host != "" {
-		addr += p.Host
+	if p.Host != nil && *p.Host != "" {
+		addr += *p.Host
 	}
-	if p.Port != 0 {
+	if p.Port != nil && *p.Port != 0 {
 		addr += fmt.Sprintf(":%d", p.Port)
 	}
 	if addr != "" {
@@ -74,16 +74,16 @@ func mergePolicies(policies ...Policy) *Policy {
 		if p.ReplyFirst != nil {
 			merged.ReplyFirst = p.ReplyFirst
 		}
-		if p.Host != "" {
+		if p.Host != nil {
 			merged.Host = p.Host
 		}
-		if p.MapTo != "" {
+		if p.MapTo != nil {
 			merged.MapTo = p.MapTo
 		}
 		if p.DNSRetry != nil {
 			merged.DNSRetry = p.DNSRetry
 		}
-		if p.Port != 0 {
+		if p.Port != nil {
 			merged.Port = p.Port
 		}
 		if p.HttpStatus != 0 {

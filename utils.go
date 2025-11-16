@@ -274,10 +274,10 @@ func ipRedirect(logger *log.Logger, ip string) (string, *Policy) {
 	if policy == nil {
 		return ip, nil
 	}
-	if policy.MapTo == "" {
+	if policy.MapTo == nil || *policy.MapTo == "" {
 		return ip, policy
 	}
-	mapTo := policy.MapTo
+	mapTo := *policy.MapTo
 	var chain bool
 	if mapTo[:1] == "^" {
 		mapTo = mapTo[1:]

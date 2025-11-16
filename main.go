@@ -157,7 +157,7 @@ func handleClient(clientConn net.Conn) {
 			} else {
 				policy = &defaultPolicy
 			}
-			if policy.Host == "" {
+			if policy.Host == nil || *policy.Host == "" {
 				var first uint16
 				if policy.IPv6First != nil && *policy.IPv6First {
 					first = dns.TypeAAAA
@@ -189,7 +189,7 @@ func handleClient(clientConn net.Conn) {
 					logger.Printf("DNS %s -> %s", dstAddr, dstHost)
 				}
 			} else {
-				dstHost = policy.Host
+				dstHost = *policy.Host
 			}
 			var ipPolicy *Policy
 			dstHost, ipPolicy = ipRedirect(logger, dstHost)
@@ -219,8 +219,8 @@ func handleClient(clientConn net.Conn) {
 		sendReply(logger, clientConn, 0x02, nil, 0)
 		return
 	}
-	if policy.Port != 0 {
-		dstPort = policy.Port
+	if policy.Port != nil && *policy.Port != 0 {
+		dstPort = *policy.Port
 	}
 	target := net.JoinHostPort(dstHost, fmt.Sprintf("%d", dstPort))
 
@@ -288,8 +288,8 @@ func handleClient(clientConn net.Conn) {
 		} else {
 			policy = mergePolicies(defaultPolicy, *policy)
 		}
-		if policy.Host != "" {
-			_, ipPolicy := ipRedirect(logger, policy.Host)
+		if policy.Host != nil && *policy.Host != "" {
+			_, ipPolicy := ipRedirect(logger, *policy.Host)
 			policy = mergePolicies(defaultPolicy, *ipPolicy, *policy)
 		}
 		if policy.HttpStatus == 0 {
@@ -362,7 +362,7 @@ func handleClient(clientConn net.Conn) {
 		if policy.TLS13Only != nil && *policy.TLS13Only && !hasKeyShare {
 			logger.Println("Not a TLS 1.3 ClientHello, connection blocked")
 			// fatal protocol_version
-			if err = sendTLSAlert(clientConn, prtVer, 70, 0x02); err != nil {
+			if err = sendTLSAlert(clientConn, prtVer, 70, 2); err != nil {
 				logger.Println("Failed to send TLS Alert:", err)
 			}
 			return
@@ -488,7 +488,7 @@ func handleClient(clientConn net.Conn) {
 }
 
 func main() {
-	fmt.Println("moi-si/lumine v0.0.5")
+	fmt.Println("moi-si/lumine v0.0.7")
 	configPath := flag.String("config", "config.json", "Config file path")
 	addr := flag.String("addr", "", "Listen address")
 	flag.Parse()
