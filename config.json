@@ -44,7 +44,10 @@
         }
     },
     "domain_policies": {
-        "*cloudflare.com;cloudflare-dns.com;one.one.one.one;*workers.dev": {
+        "*www.cloudflare.com": {
+            "host": "^www.cloudflare.com"
+        },
+        "(*.|)cloudflare.com;cloudflare-dns.com;one.one.one.one;*workers.dev": {
             "host": "www.ietf.org",
             "port": 8443
         },

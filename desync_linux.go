@@ -4,13 +4,13 @@
 package main
 
 import (
-	"net"
+	"context"
 	"errors"
 	"fmt"
-	"unsafe"
-	"time"
+	"net"
 	"syscall"
-	"context"
+	"time"
+	"unsafe"
 
 	"golang.org/x/sys/unix"
 )
@@ -73,10 +73,10 @@ func sendFakeData(
 	fakeSleep time.Duration,
 ) error {
 	buf, err := unix.Mmap(
-		0, 
-		0, 
-		(dataLen+3)&^3, 
-		unix.PROT_READ|unix.PROT_WRITE, 
+		0,
+		0,
+		(dataLen+3)&^3,
+		unix.PROT_READ|unix.PROT_WRITE,
 		unix.MAP_PRIVATE|unix.MAP_ANONYMOUS,
 	)
 	if err != nil {
@@ -145,10 +145,10 @@ func desyncSend(
 		return fmt.Errorf("get default ttl: %s", err)
 	}
 	dataLen := len(fakeData)
-	sleepSec := time.Duration(fakeSleep*float64(time.Second))
+	sleepSec := time.Duration(fakeSleep * float64(time.Second))
 	err = sendFakeData(
 		fd,
-		fakeData, firstPacket[:dataLen], dataLen, 
+		fakeData, firstPacket[:dataLen], dataLen,
 		fakeTTL, defaultTTL,
 		level, opt,
 		sleepSec,
@@ -170,7 +170,7 @@ func desyncSend(
 	firstPacket = firstPacket[offset:]
 	err = sendFakeData(
 		fd,
-		fakeData, firstPacket[:dataLen], dataLen, 
+		fakeData, firstPacket[:dataLen], dataLen,
 		fakeTTL, defaultTTL,
 		level, opt,
 		sleepSec,

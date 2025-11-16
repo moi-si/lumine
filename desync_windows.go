@@ -125,7 +125,7 @@ func sendFakeData(
 	if err = windows.SetEndOfFile(fileHandle); err != nil {
 		return fmt.Errorf("failed to set end of file: %v", err)
 	}
-	err = windows.SetsockoptInt(sockHandle,level, opt, fakeTTL)
+	err = windows.SetsockoptInt(sockHandle, level, opt, fakeTTL)
 	if err != nil {
 		return fmt.Errorf("failed to set fake TTL: %v", err)
 	}
@@ -179,7 +179,7 @@ func sendFakeData(
 }
 
 func desyncSend(
-	conn net.Conn, ipv6 bool, 
+	conn net.Conn, ipv6 bool,
 	firstPacket, fakeData []byte, sniPos, sniLen, fakeTTL int, fakeSleep float64,
 ) error {
 	tcpConn, ok := conn.(*net.TCPConn)

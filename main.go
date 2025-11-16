@@ -44,7 +44,7 @@ func sendReply(logger *log.Logger, conn net.Conn, rep byte, bindIP net.IP, bindP
 	binary.BigEndian.AppendUint16(portBytes, bindPort)
 	resp = append(resp, portBytes...)
 	if _, err := conn.Write(resp); err != nil {
-		logger.Println("Failed to send SOCKS5 reply:", err)
+		logger.Println("ERROR send SOCKS5 reply:", err)
 	}
 }
 
@@ -55,7 +55,7 @@ func handleClient(clientConn net.Conn) {
 
 	header, err := readN(clientConn, 2)
 	if err != nil {
-		logger.Println("Failed to read method selection message:", err)
+		logger.Println("ERROR read method selection message:", err)
 		return
 	}
 	if header[0] != 0x05 {
@@ -65,16 +65,15 @@ func handleClient(clientConn net.Conn) {
 	nMethods := int(header[1])
 	methods, err := readN(clientConn, nMethods)
 	if err != nil {
-		logger.Println("Failed to read methods:", err)
+		logger.Println("ERROR read methods:", err)
 		return
 	}
 	var authMethod byte = 0xFF // No acceptable methods
 	if slices.Contains(methods, 0x00) {
 		authMethod = 0x00
 	}
-	_, err = clientConn.Write([]byte{0x05, authMethod})
-	if err != nil {
-		logger.Println("Failed to read auth method:", err)
+	if _, err = clientConn.Write([]byte{0x05, authMethod}); err != nil {
+		logger.Println("ERROR read auth method:", err)
 		return
 	}
 	if authMethod == 0xFF {
@@ -84,7 +83,7 @@ func handleClient(clientConn net.Conn) {
 
 	header, err = readN(clientConn, 4)
 	if err != nil {
-		logger.Println("Failed to read request header:", err)
+		logger.Println("ERROR read request header:", err)
 		return
 	}
 	if header[0] != 0x05 {
@@ -103,7 +102,7 @@ func handleClient(clientConn net.Conn) {
 	case 0x01: // IPv4 address
 		ipBytes, err := readN(clientConn, 4)
 		if err != nil {
-			logger.Println("Failed to read IPv4 dest address:", err)
+			logger.Println("ERROR read IPv4 dest address:", err)
 			return
 		}
 		dstAddr = net.IP(ipBytes).String()
@@ -117,7 +116,7 @@ func handleClient(clientConn net.Conn) {
 	case 0x04: // IPv6 address
 		ipBytes, err := readN(clientConn, 16)
 		if err != nil {
-			logger.Println("Failed to read IPv6 dest address:", err)
+			logger.Println("ERROR read IPv6 dest address:", err)
 			return
 		}
 		dstAddr = net.IP(ipBytes).String()
@@ -131,12 +130,12 @@ func handleClient(clientConn net.Conn) {
 	case 0x03: // Domain name
 		lenByte, err := readN(clientConn, 1)
 		if err != nil {
-			logger.Println("Failed to read domain length:", err)
+			logger.Println("ERROR read domain length:", err)
 			return
 		}
 		domainBytes, err := readN(clientConn, int(lenByte[0]))
 		if err != nil {
-			logger.Println("Failed to read domain:", err)
+			logger.Println("ERROR read domain:", err)
 			return
 		}
 		dstAddr = string(domainBytes)
@@ -157,6 +156,7 @@ func handleClient(clientConn net.Conn) {
 			} else {
 				policy = &defaultPolicy
 			}
+			var disableRedirect bool
 			if policy.Host == nil || *policy.Host == "" {
 				var first uint16
 				if policy.IPv6First != nil && *policy.IPv6First {
@@ -174,7 +174,7 @@ func handleClient(clientConn net.Conn) {
 					var err1, err2 error
 					dstHost, err1, err2 = doubleQuery(dstAddr, first, second)
 					if err2 != nil {
-						logger.Printf("Failed to resolve %s: err1=%s; err2=%s", dstAddr, err1, err2)
+						logger.Printf("ERROR resolve %s: err1=%s; err2=%s", dstAddr, err1, err2)
 						sendReply(logger, clientConn, 0x01, nil, 0)
 						return
 					}
@@ -182,22 +182,29 @@ func handleClient(clientConn net.Conn) {
 					var err error
 					dstHost, err = dnsQuery(dstAddr, first)
 					if err != nil {
-						logger.Printf("Failed to resolve %s: %s", dstAddr, err)
+						logger.Printf("ERROR resolve %s: %s", dstAddr, err)
 						sendReply(logger, clientConn, 0x01, nil, 0)
 						return
 					}
 					logger.Printf("DNS %s -> %s", dstAddr, dstHost)
 				}
 			} else {
-				dstHost = *policy.Host
+				disableRedirect = (*policy.Host)[0] == '^'
+				if disableRedirect {
+					dstHost = (*policy.Host)[1:]
+				} else {
+					dstHost = *policy.Host
+				}
 			}
 			var ipPolicy *Policy
-			dstHost, ipPolicy = ipRedirect(logger, dstHost)
-			if ipPolicy != nil {
-				if found {
-					policy = mergePolicies(defaultPolicy, *ipPolicy, *domainPolicy)
-				} else {
-					policy = mergePolicies(defaultPolicy, *ipPolicy)
+			if !disableRedirect {
+				dstHost, ipPolicy = ipRedirect(logger, dstHost)
+				if ipPolicy != nil {
+					if found {
+						policy = mergePolicies(defaultPolicy, *ipPolicy, *domainPolicy)
+					} else {
+						policy = mergePolicies(defaultPolicy, *ipPolicy)
+					}
 				}
 			}
 		}
@@ -208,7 +215,7 @@ func handleClient(clientConn net.Conn) {
 	}
 	portBytes, err := readN(clientConn, 2)
 	if err != nil {
-		logger.Println("Failed to read port:", err)
+		logger.Println("ERROR read port:", err)
 		return
 	}
 	dstPort := binary.BigEndian.Uint16(portBytes)
@@ -259,7 +266,7 @@ func handleClient(clientConn net.Conn) {
 		if errors.Is(err, io.EOF) {
 			logger.Println("Client sent nothing in tunnel")
 		} else {
-			logger.Println("Failed to read first packet:", err)
+			logger.Println("ERROR read first packet:", err)
 		}
 		return
 	}
@@ -267,7 +274,7 @@ func handleClient(clientConn net.Conn) {
 	case 'G', 'P', 'D', 'O', 'T', 'H':
 		req, err := http.ReadRequest(br)
 		if err != nil {
-			logger.Println("Error parse HTTP request:", err)
+			logger.Println("ERROR parse HTTP request:", err)
 			return
 		}
 		defer req.Body.Close()
@@ -289,8 +296,10 @@ func handleClient(clientConn net.Conn) {
 			policy = mergePolicies(defaultPolicy, *policy)
 		}
 		if policy.Host != nil && *policy.Host != "" {
-			_, ipPolicy := ipRedirect(logger, *policy.Host)
-			policy = mergePolicies(defaultPolicy, *ipPolicy, *policy)
+			if (*policy.Host)[0] != '^' {
+				_, ipPolicy := ipRedirect(logger, *policy.Host)
+				policy = mergePolicies(defaultPolicy, *ipPolicy, *policy)
+			}
 		}
 		if policy.HttpStatus == 0 {
 			if replyFirst {
@@ -308,14 +317,14 @@ func handleClient(clientConn net.Conn) {
 						Close:         true,
 					}
 					if err = resp.Write(clientConn); err != nil {
-						logger.Println("Failed to send 502 response:", err)
+						logger.Println("ERROR send 502 response:", err)
 					}
 					return
 				}
 				defer dstConn.Close()
 			}
 			if err := req.Write(dstConn); err != nil {
-				logger.Println("Failed to forward request:", err)
+				logger.Println("ERROR forward request:", err)
 				return
 			}
 		} else {
@@ -334,7 +343,7 @@ func handleClient(clientConn net.Conn) {
 				resp.Header.Set("Location", "https://"+host+req.URL.RequestURI())
 			}
 			if err = resp.Write(clientConn); err != nil {
-				logger.Printf("Failed to send %d response: %s", policy.HttpStatus, err)
+				logger.Printf("ERROR send %d response: %s", policy.HttpStatus, err)
 			} else {
 				logger.Println("Sent", statusLine)
 			}
@@ -344,18 +353,18 @@ func handleClient(clientConn net.Conn) {
 		payloadLen := binary.BigEndian.Uint16(peekBytes[3:5])
 		record := make([]byte, 5+payloadLen)
 		if _, err = io.ReadFull(br, record); err != nil {
-			logger.Println("Failed to read first record:", err)
+			logger.Println("ERROR read first record:", err)
 			return
 		}
 		prtVer, sniPos, sniLen, hasKeyShare, err := parseClientHello(record)
 		if err != nil {
-			logger.Println("Error parse record:", err)
+			logger.Println("ERROR parse record:", err)
 			return
 		}
 		if policy.Mode == "tls-alert" {
 			// fatal access_denied
 			if err = sendTLSAlert(clientConn, prtVer, 49, 2); err != nil {
-				logger.Println("Failed to send TLS Alert:", err)
+				logger.Println("ERROR send TLS Alert:", err)
 			}
 			return
 		}
@@ -363,7 +372,7 @@ func handleClient(clientConn net.Conn) {
 			logger.Println("Not a TLS 1.3 ClientHello, connection blocked")
 			// fatal protocol_version
 			if err = sendTLSAlert(clientConn, prtVer, 70, 2); err != nil {
-				logger.Println("Failed to send TLS Alert:", err)
+				logger.Println("ERROR send TLS Alert:", err)
 			}
 			return
 		}
@@ -378,7 +387,7 @@ func handleClient(clientConn net.Conn) {
 				defer dstConn.Close()
 			}
 			if _, err = dstConn.Write(record); err != nil {
-				logger.Println("Failed to send ClientHello directly:", err)
+				logger.Println("ERROR send ClientHello directly:", err)
 				return
 			}
 			logger.Println("Sent ClientHello directly")
@@ -398,7 +407,7 @@ func handleClient(clientConn net.Conn) {
 				}
 				if domainPolicy.Mode == "tls-alert" {
 					if err = sendTLSAlert(clientConn, prtVer, 49, 2); err != nil {
-						logger.Println("Failed to send TLS Alert:", err)
+						logger.Println("ERROR send TLS Alert:", err)
 					}
 					return
 				}
@@ -415,21 +424,21 @@ func handleClient(clientConn net.Conn) {
 			switch policy.Mode {
 			case "direct":
 				if _, err = dstConn.Write(record); err != nil {
-					logger.Println("Failed to send ClientHello directly:", err)
+					logger.Println("ERROR send ClientHello directly:", err)
 					return
 				}
 				logger.Println("Sent ClientHello directly")
 			case "tls-rf":
 				err = sendRecords(dstConn, record, sniPos, sniLen, policy.NumRecords)
 				if err != nil {
-					logger.Println("Error TLS fragmentation:", err)
+					logger.Println("ERROR TLS fragmentation:", err)
 					return
 				}
 				logger.Println("Successfully sent ClientHello")
 			case "ttl-d":
 				fakePacketBytes, err := encode(policy.FakePacket)
 				if err != nil {
-					logger.Println("Error encode fake packet:", err)
+					logger.Println("ERROR encode fake packet:", err)
 					return
 				}
 				var ttl int
@@ -449,7 +458,7 @@ func handleClient(clientConn net.Conn) {
 					if calcTTL != nil {
 						ttl, err = calcTTL(ttl)
 						if err != nil {
-							logger.Println("Error calculate TTL:", err)
+							logger.Println("ERROR calculate TTL:", err)
 							sendReply(logger, clientConn, 0x01, nil, 0)
 							return
 						}
@@ -465,7 +474,7 @@ func handleClient(clientConn net.Conn) {
 					sniPos, sniLen, ttl, policy.FakeSleep,
 				)
 				if err != nil {
-					logger.Println("Error TTL desync:", err)
+					logger.Println("ERROR TTL desync:", err)
 					return
 				}
 				logger.Println("Successfully sent ClientHello")
@@ -488,13 +497,13 @@ func handleClient(clientConn net.Conn) {
 }
 
 func main() {
-	fmt.Println("moi-si/lumine v0.0.7")
+	fmt.Println("moi-si/lumine v0.0.8")
 	configPath := flag.String("config", "config.json", "Config file path")
-	addr := flag.String("addr", "", "Listen address")
+	addr := flag.String("addr", "", "Bind address (default: address from config file)")
 	flag.Parse()
 	serverAddr, err := loadConfig(*configPath)
 	if err != nil {
-		fmt.Printf("Failed to load config: %s", err)
+		fmt.Println("Failed to load config:", err)
 		return
 	}
 
@@ -506,13 +515,13 @@ func main() {
 	}
 	ln, err := net.Listen("tcp", listenAddr)
 	if err != nil {
-		panic(fmt.Sprintf("Listen error: %v", err))
+		panic(fmt.Sprintf("Listen error: %s", err))
 	}
-	fmt.Printf("Listening on %s\n", listenAddr)
+	fmt.Println("Listening on", listenAddr)
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			log.Printf("Error accept: %v", err)
+			log.Printf("Error accept: %s", err)
 		} else {
 			go handleClient(conn)
 		}

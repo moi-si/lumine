@@ -14,9 +14,9 @@ import (
 
 type Policy struct {
 	ReplyFirst *bool   `json:"reply_first"`
-	Host       *string  `json:"host"`
-	MapTo      *string  `json:"map_to"`
-	Port       *uint16  `json:"port"`
+	Host       *string `json:"host"`
+	MapTo      *string `json:"map_to"`
+	Port       *uint16 `json:"port"`
 	DNSRetry   *bool   `json:"dns_retry"`
 	IPv6First  *bool   `json:"ipv6_first"`
 	HttpStatus int     `json:"http_status"`
@@ -29,13 +29,13 @@ type Policy struct {
 }
 
 func (p Policy) String() string {
-	fields := []string{}
+	fields := make([]string, 0, 9)
 	var addr string
 	if p.Host != nil && *p.Host != "" {
 		addr += *p.Host
 	}
 	if p.Port != nil && *p.Port != 0 {
-		addr += fmt.Sprintf(":%d", p.Port)
+		addr += fmt.Sprintf(":%d", *p.Port)
 	}
 	if addr != "" {
 		fields = append(fields, addr)
