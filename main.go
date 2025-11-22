@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"slices"
+	"sync"
 	"sync/atomic"
 
 	"github.com/miekg/dns"
@@ -44,11 +45,11 @@ func sendReply(logger *log.Logger, conn net.Conn, rep byte) {
 func handleClient(clientConn net.Conn) {
 	defer clientConn.Close()
 	logger := makeLogger()
-	logger.Println("Accepted connection from", clientConn.RemoteAddr().String())
+	logger.Println("Conn from", clientConn.RemoteAddr().String())
 
 	header, err := readN(clientConn, 2)
 	if err != nil {
-		logger.Println("ERROR read method selection message:", err)
+		logger.Println("ERROR read method selection:", err)
 		return
 	}
 	if header[0] != 0x05 {
@@ -61,26 +62,26 @@ func handleClient(clientConn net.Conn) {
 		logger.Println("ERROR read methods:", err)
 		return
 	}
-	var authMethod byte = 0xFF // No acceptable methods
+	var authMethod byte = 0xFF
 	if slices.Contains(methods, 0x00) {
 		authMethod = 0x00
 	}
 	if _, err = clientConn.Write([]byte{0x05, authMethod}); err != nil {
-		logger.Println("ERROR read auth method:", err)
+		logger.Println("Method write fail:", err)
 		return
 	}
 	if authMethod == 0xFF {
-		logger.Println("No `no auth` method was given")
+		logger.Println("No `no auth` method")
 		return
 	}
 
 	header, err = readN(clientConn, 4)
 	if err != nil {
-		logger.Println("ERROR read request header:", err)
+		logger.Println("Read req header fail:", err)
 		return
 	}
 	if header[0] != 0x05 {
-		logger.Println("Invalid version:", header[0])
+		logger.Println("Ver err:", header[0])
 		return
 	}
 	if header[1] != 0x01 {
@@ -95,7 +96,7 @@ func handleClient(clientConn net.Conn) {
 	case 0x01: // IPv4 address
 		ipBytes, err := readN(clientConn, 4)
 		if err != nil {
-			logger.Println("ERROR read IPv4 dest address:", err)
+			logger.Println("Read IPv4 fail:", err)
 			return
 		}
 		dstAddr = net.IP(ipBytes).String()
@@ -109,7 +110,7 @@ func handleClient(clientConn net.Conn) {
 	case 0x04: // IPv6 address
 		ipBytes, err := readN(clientConn, 16)
 		if err != nil {
-			logger.Println("ERROR read IPv6 dest address:", err)
+			logger.Println("Read IPv6 fail", err)
 			return
 		}
 		dstAddr = net.IP(ipBytes).String()
@@ -123,12 +124,12 @@ func handleClient(clientConn net.Conn) {
 	case 0x03: // Domain name
 		lenByte, err := readN(clientConn, 1)
 		if err != nil {
-			logger.Println("ERROR read domain length:", err)
+			logger.Println("Read domain len fail:", err)
 			return
 		}
 		domainBytes, err := readN(clientConn, int(lenByte[0]))
 		if err != nil {
-			logger.Println("ERROR read domain:", err)
+			logger.Println("Read domain fail:", err)
 			return
 		}
 		dstAddr = string(domainBytes)
@@ -167,7 +168,7 @@ func handleClient(clientConn net.Conn) {
 					var err1, err2 error
 					dstHost, err1, err2 = doubleQuery(dstAddr, first, second)
 					if err2 != nil {
-						logger.Printf("ERROR resolve %s: err1=%s; err2=%s", dstAddr, err1, err2)
+						logger.Printf("DNS %s fail: %s, %s", dstAddr, err1, err2)
 						sendReply(logger, clientConn, 0x01)
 						return
 					}
@@ -175,7 +176,7 @@ func handleClient(clientConn net.Conn) {
 					var err error
 					dstHost, err = dnsQuery(dstAddr, first)
 					if err != nil {
-						logger.Printf("ERROR resolve %s: %s", dstAddr, err)
+						logger.Printf("DNS %s fail: %s", dstAddr, err)
 						sendReply(logger, clientConn, 0x01)
 						return
 					}
@@ -208,14 +209,13 @@ func handleClient(clientConn net.Conn) {
 	}
 	portBytes, err := readN(clientConn, 2)
 	if err != nil {
-		logger.Println("ERROR read port:", err)
+		logger.Println("Read port fail:", err)
 		return
 	}
 	dstPort := binary.BigEndian.Uint16(portBytes)
 	oldTarget := net.JoinHostPort(dstAddr, fmt.Sprintf("%d", dstPort))
-	logger.Printf("CONNECT %s -> %s", oldTarget, policy)
+	logger.Println("CONN", oldTarget, "->", policy)
 	if policy.Mode == "block" {
-		logger.Println("Connection blocked")
 		sendReply(logger, clientConn, 0x02)
 		return
 	}
@@ -225,6 +225,15 @@ func handleClient(clientConn net.Conn) {
 	target := net.JoinHostPort(dstHost, fmt.Sprintf("%d", dstPort))
 
 	var dstConn net.Conn
+	var once sync.Once
+	closeBoth := func() {
+		once.Do(func() {
+			clientConn.Close()
+			if dstConn != nil {
+				dstConn.Close()
+			}
+		})
+	}
 	replyFirst := policy.ReplyFirst != nil && *policy.ReplyFirst
 	if replyFirst {
 		sendReply(logger, clientConn, 0x00)
@@ -257,9 +266,9 @@ func handleClient(clientConn net.Conn) {
 	peekBytes, err := br.Peek(5)
 	if err != nil {
 		if errors.Is(err, io.EOF) {
-			logger.Println("Client sent nothing in tunnel")
+			logger.Println("Empty tunnel")
 		} else {
-			logger.Println("ERROR read first packet:", err)
+			logger.Println("Read first packet fail:", err)
 		}
 		return
 	}
@@ -267,7 +276,7 @@ func handleClient(clientConn net.Conn) {
 	case 'G', 'P', 'D', 'O', 'T', 'H':
 		req, err := http.ReadRequest(br)
 		if err != nil {
-			logger.Println("ERROR parse HTTP request:", err)
+			logger.Println("HTTP request parsing fail:", err)
 			return
 		}
 		defer req.Body.Close()
@@ -310,14 +319,14 @@ func handleClient(clientConn net.Conn) {
 						Close:         true,
 					}
 					if err = resp.Write(clientConn); err != nil {
-						logger.Println("ERROR send 502 response:", err)
+						logger.Println("Send 502 fail:", err)
 					}
 					return
 				}
 				defer dstConn.Close()
 			}
 			if err := req.Write(dstConn); err != nil {
-				logger.Println("ERROR forward request:", err)
+				logger.Println("Forward req fail:", err)
 				return
 			}
 		} else {
@@ -336,7 +345,7 @@ func handleClient(clientConn net.Conn) {
 				resp.Header.Set("Location", "https://"+host+req.URL.RequestURI())
 			}
 			if err = resp.Write(clientConn); err != nil {
-				logger.Printf("ERROR send %d response: %s", policy.HttpStatus, err)
+				logger.Printf("Send %d fail: %s", policy.HttpStatus, err)
 			} else {
 				logger.Println("Sent", statusLine)
 			}
@@ -346,18 +355,18 @@ func handleClient(clientConn net.Conn) {
 		payloadLen := binary.BigEndian.Uint16(peekBytes[3:5])
 		record := make([]byte, 5+payloadLen)
 		if _, err = io.ReadFull(br, record); err != nil {
-			logger.Println("ERROR read first record:", err)
+			logger.Println("Read first record fail:", err)
 			return
 		}
 		prtVer, sniPos, sniLen, hasKeyShare, err := parseClientHello(record)
 		if err != nil {
-			logger.Println("ERROR parse record:", err)
+			logger.Println("Record parsing fail:", err)
 			return
 		}
 		if policy.Mode == "tls-alert" {
 			// fatal access_denied
 			if err = sendTLSAlert(clientConn, prtVer, 49, 2); err != nil {
-				logger.Println("ERROR send TLS Alert:", err)
+				logger.Println("Send TLS alert fail:", err)
 			}
 			return
 		}
@@ -365,12 +374,12 @@ func handleClient(clientConn net.Conn) {
 			logger.Println("Not a TLS 1.3 ClientHello, connection blocked")
 			// fatal protocol_version
 			if err = sendTLSAlert(clientConn, prtVer, 70, 2); err != nil {
-				logger.Println("ERROR send TLS Alert:", err)
+				logger.Println("Send TLS alert fail:", err)
 			}
 			return
 		}
 		if sniPos <= 0 || sniLen <= 0 {
-			logger.Println("No SNI in ClientHello")
+			logger.Println("SNI not found")
 			if replyFirst {
 				dstConn, err = net.Dial("tcp", target)
 				if err != nil {
@@ -380,27 +389,26 @@ func handleClient(clientConn net.Conn) {
 				defer dstConn.Close()
 			}
 			if _, err = dstConn.Write(record); err != nil {
-				logger.Println("ERROR send ClientHello directly:", err)
+				logger.Println("Send ClientHello directly fail:", err)
 				return
 			}
 			logger.Println("Sent ClientHello directly")
 		} else {
 			sniStr := string(record[sniPos : sniPos+sniLen])
-			logger.Println("Server name:", sniStr)
 			if dstAddr != sniStr {
+				logger.Println("Server name:", sniStr)
 				domainPolicy := domainMatcher.Find(sniStr)
 				if domainPolicy == nil {
 					domainPolicy = &defaultPolicy
 				} else {
 					domainPolicy = mergePolicies(defaultPolicy, *domainPolicy)
 				}
-				if domainPolicy.Mode == "block" {
-					logger.Println("Connection blocked")
+				switch domainPolicy.Mode {
+				case "block":
 					return
-				}
-				if domainPolicy.Mode == "tls-alert" {
+				case "tls-alert":
 					if err = sendTLSAlert(clientConn, prtVer, 49, 2); err != nil {
-						logger.Println("ERROR send TLS Alert:", err)
+						logger.Println("Send TLS alert fail:", err)
 					}
 					return
 				}
@@ -417,21 +425,21 @@ func handleClient(clientConn net.Conn) {
 			switch policy.Mode {
 			case "direct":
 				if _, err = dstConn.Write(record); err != nil {
-					logger.Println("ERROR send ClientHello directly:", err)
+					logger.Println("Send ClientHello directly fail:", err)
 					return
 				}
 				logger.Println("Sent ClientHello directly")
 			case "tls-rf":
 				err = sendRecords(dstConn, record, sniPos, sniLen, policy.NumRecords)
 				if err != nil {
-					logger.Println("ERROR TLS fragmentation:", err)
+					logger.Println("TLS fragmentation fail:", err)
 					return
 				}
 				logger.Println("Successfully sent ClientHello")
 			case "ttl-d":
 				fakePacketBytes, err := encode(policy.FakePacket)
 				if err != nil {
-					logger.Println("ERROR encode fake packet:", err)
+					logger.Println("Fake packet encoding fail:", err)
 					return
 				}
 				var ttl int
@@ -439,7 +447,7 @@ func handleClient(clientConn net.Conn) {
 				if policy.FakeTTL == 0 {
 					ttl, err = minReachableTTL(target, ipv6)
 					if err != nil {
-						logger.Println("Probe TTL failed:", err)
+						logger.Println("TTL probing fail:", err)
 						sendReply(logger, clientConn, 0x01)
 						return
 					}
@@ -451,7 +459,7 @@ func handleClient(clientConn net.Conn) {
 					if calcTTL != nil {
 						ttl, err = calcTTL(ttl)
 						if err != nil {
-							logger.Println("ERROR calculate TTL:", err)
+							logger.Println("TTL calculating fail:", err)
 							sendReply(logger, clientConn, 0x01)
 							return
 						}
@@ -467,7 +475,7 @@ func handleClient(clientConn net.Conn) {
 					sniPos, sniLen, ttl, policy.FakeSleep,
 				)
 				if err != nil {
-					logger.Println("ERROR TTL desync:", err)
+					logger.Println("TTL desync fail:", err)
 					return
 				}
 				logger.Println("Successfully sent ClientHello")
@@ -485,8 +493,19 @@ func handleClient(clientConn net.Conn) {
 		}
 	}
 
-	go io.Copy(clientConn, dstConn)
-	io.Copy(dstConn, clientConn)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		_, _ = io.Copy(dstConn, clientConn)
+		closeBoth()
+	}()
+	go func() {
+		defer wg.Done()
+		_, _ = io.Copy(clientConn, dstConn)
+		closeBoth()
+	}()
+	wg.Wait()
 }
 
 func main() {
