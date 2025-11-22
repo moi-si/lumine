@@ -39,7 +39,7 @@ func readN(conn net.Conn, n int) ([]byte, error) {
 func sendReply(logger *log.Logger, conn net.Conn, rep byte) {
 	resp := []byte{0x05, rep, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
 	if _, err := conn.Write(resp); err != nil {
-		logger.Println("ERROR send SOCKS5 reply:", err)
+		logger.Println("Send SOCKS5 reply fail:", err)
 	}
 }
 
@@ -88,7 +88,7 @@ func handleClient(clientConn net.Conn) {
 
 	header, err := readN(clientConn, 2)
 	if err != nil {
-		logger.Println("ERROR read method selection:", err)
+		logger.Println("Read method selection fail:", err)
 		return
 	}
 	if header[0] != 0x05 {
@@ -98,7 +98,7 @@ func handleClient(clientConn net.Conn) {
 	nMethods := int(header[1])
 	methods, err := readN(clientConn, nMethods)
 	if err != nil {
-		logger.Println("ERROR read methods:", err)
+		logger.Println("Read methods fail:", err)
 		return
 	}
 	var authMethod byte = 0xFF
@@ -480,7 +480,7 @@ func handleClient(clientConn net.Conn) {
 				}
 				logger.Println("Sent ClientHello directly")
 			case "tls-rf":
-				err = sendRecords(dstConn, record, sniPos, sniLen, policy.NumRecords)
+				err = sendRecords(dstConn, record, sniPos, sniLen, policy.NumRecords, policy.NumSegments)
 				if err != nil {
 					logger.Println("TLS fragmentation fail:", err)
 					return

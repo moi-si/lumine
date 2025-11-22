@@ -14,18 +14,19 @@ import (
 )
 
 type Policy struct {
-	ReplyFirst *bool   `json:"reply_first"`
-	Host       *string `json:"host"`
-	MapTo      *string `json:"map_to"`
-	Port       *uint16 `json:"port"`
-	DNSRetry   *bool   `json:"dns_retry"`
-	IPv6First  *bool   `json:"ipv6_first"`
-	HttpStatus int     `json:"http_status"`
-	TLS13Only  *bool   `json:"tls13_only"`
-	Mode       string  `json:"mode"`
-	NumRecords int     `json:"num_records"`
-	FakeTTL    int     `json:"fake_ttl"`
-	FakeSleep  float64 `json:"fake_sleep"`
+	ReplyFirst  *bool   `json:"reply_first"`
+	Host        *string `json:"host"`
+	MapTo       *string `json:"map_to"`
+	Port        *uint16 `json:"port"`
+	DNSRetry    *bool   `json:"dns_retry"`
+	IPv6First   *bool   `json:"ipv6_first"`
+	HttpStatus  int     `json:"http_status"`
+	TLS13Only   *bool   `json:"tls13_only"`
+	Mode        string  `json:"mode"`
+	NumRecords  int     `json:"num_records"`
+	NumSegments int     `json:"num_segs"`
+	FakeTTL     int     `json:"fake_ttl"`
+	FakeSleep   float64 `json:"fake_sleep"`
 }
 
 func (p Policy) String() string {
@@ -55,7 +56,10 @@ func (p Policy) String() string {
 	fields = append(fields, p.Mode)
 	switch p.Mode {
 	case "tls-rf":
-		fields = append(fields, fmt.Sprintf("%d records", p.NumRecords))
+		fields = append(fields, fmt.Sprintf("%d records", p.NumSegments))
+		if p.NumSegments != -1 {
+			fields = append(fields, fmt.Sprintf("%d segments", p.NumSegments))
+		}
 	case "ttl-d":
 		if p.FakeTTL == 0 {
 			fields = append(fields, "auto_fake_ttl")
@@ -96,6 +100,9 @@ func mergePolicies(policies ...Policy) *Policy {
 		}
 		if p.NumRecords != 0 {
 			merged.NumRecords = p.NumRecords
+		}
+		if p.NumSegments != 0 {
+			merged.NumSegments = p.NumSegments
 		}
 		if p.FakeSleep != 0 {
 			merged.FakeSleep = p.FakeSleep

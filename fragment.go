@@ -6,111 +6,97 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
-	"time"
 )
 
-var rnd = rand.New(rand.NewSource(time.Now().UnixNano()))
-
-func sendRecords(conn net.Conn, data []byte, offset, length, num int) error {
+func sendRecords(conn net.Conn, data []byte, offset, length, numRcd, numSeg int) error {
 	if len(data) < 5 {
 		return errors.New("data too short")
 	}
-	if num <= 0 {
-		return errors.New("invalid num_records")
+	if numRcd <= 0 {
+		return errors.New("invalid numRcd")
+	}
+	if numSeg != 1 && numSeg != -1 && numSeg <= 0 {
+		return errors.New("invalid numSeg")
 	}
 	if length < 4 {
 		return errors.New("invalid length")
 	}
-	if num == 1 {
-		if _, err := conn.Write(data); err != nil {
-			return fmt.Errorf("failed to send data directly: %v", err)
-		}
-		return nil
-	}
 
-	header := data[:3]
+	header := make([]byte, 3)
+	copy(header, data[:3])
 	payload := data[5:]
 	offset -= 5
-	if offset < -1 {
-		return errors.New("adjusted offset < -1, impossible")
-	}
 
-	start := offset + 1
-	end := offset + length
-	if start < 0 || end > len(payload) {
+	if offset < -1 {
+		return errors.New("adjusted offset < -1")
+	}
+	if offset+length > len(payload) {
 		return errors.New("slice out of payload bounds")
 	}
-	idx := offset + 1 + rnd.Intn(length-1)
 
-	leftChunks := num / 2
-	rightChunks := num - leftChunks
-	leftData := payload[:idx]
-	rightData := payload[idx:]
+	cut := offset + 1 + rand.Intn(length-1)
 
-	leftParts, err := splitEvenly(leftData, leftChunks)
-	if err != nil {
+	rightChunks := numRcd / 2
+	leftChunks := numRcd - rightChunks
+
+	chunks := make([][]byte, 0, numRcd)
+	splitAndAppend(payload[:cut], header, leftChunks, &chunks)
+	splitAndAppend(payload[cut:], header, rightChunks, &chunks)
+
+	total := 0
+	for _, c := range chunks {
+		total += len(c)
+	}
+	merged := make([]byte, 0, total)
+	for _, c := range chunks {
+		merged = append(merged, c...)
+	}
+
+	if numSeg == -1 || numSeg == 1 || len(merged) <= numSeg {
+		_, err := conn.Write(merged)
 		return err
 	}
-	rightParts, err := splitEvenly(rightData, rightChunks)
-	if err != nil {
-		return err
-	}
-	allParts := append(leftParts, rightParts...)
-	totalLen := 0
-	for _, part := range allParts {
-		partLen := len(part)
-		if len(part) > 0xffff {
-			return errors.New("single chunk exceeds 65535 bytes, cannot fit into uint16")
+
+	base := len(merged) / numSeg
+	for i := range numSeg {
+		start := i * base
+		end := start + base
+		if i == numSeg-1 {
+			end = len(merged)
 		}
-		totalLen += 3 + 2 + partLen
-	}
-	tcpData := make([]byte, 0, totalLen)
-	for _, part := range allParts {
-		tcpData = append(tcpData, header...)
-		var lenBytes [2]byte
-		binary.BigEndian.PutUint16(lenBytes[:], uint16(len(part)))
-		tcpData = append(tcpData, lenBytes[:]...)
-		tcpData = append(tcpData, part...)
-	}
-
-	if _, err := conn.Write(tcpData); err != nil {
-		return fmt.Errorf("error send record: %v", err)
+		if _, err := conn.Write(merged[start:end]); err != nil {
+			return fmt.Errorf("segment %d write error: %w", i, err)
+		}
 	}
 	return nil
 }
 
-func splitEvenly(data []byte, n int) ([][]byte, error) {
-	if n < 0 {
-		return nil, errors.New("chunk count must be non-negative")
+func splitAndAppend(data, header []byte, n int, result *[][]byte) {
+	if n <= 0 {
+		return
 	}
-	if n == 0 {
-		return [][]byte{}, nil
+	if n == 1 || len(data) < n {
+		*result = append(*result, makeRecord(header, data))
+		return
 	}
-	if len(data) == 0 {
-		empty := make([][]byte, n)
-		for i := range empty {
-			empty[i] = []byte{}
-		}
-		return empty, nil
-	}
-
-	baseSize := len(data) / n
-	parts := make([][]byte, n)
-	pos := 0
+	base := len(data) / n
 	for i := range n {
-		size := baseSize
+		var part []byte
 		if i == n-1 {
-			size = len(data) - pos
+			part = data[i*base:]
+		} else {
+			part = data[i*base : (i+1)*base]
 		}
-		if size < 0 {
-			size = 0
-		}
-		end := min(pos+size, len(data))
-		parts[i] = data[pos:end]
-		pos = end
+		*result = append(*result, makeRecord(header, part))
 	}
-	if pos != len(data) {
-		return nil, errors.New("splitEvenly internal error: leftover bytes")
-	}
-	return parts, nil
+}
+
+func makeRecord(header, payload []byte) []byte {
+	h := make([]byte, len(header))
+	copy(h, header)
+	var l [2]byte
+	binary.BigEndian.PutUint16(l[:], uint16(len(payload)))
+	rec := append(h, l[:]...)
+	rec = append(rec, payload...)
+	return rec
 }

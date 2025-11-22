@@ -12,6 +12,7 @@
         "mode": "tls-rf",
         "tls13_only": true,
         "num_records": 10,
+        "num_segs": 4,
         "fake_ttl": 0,
         "fake_sleep": 0.2
     },
