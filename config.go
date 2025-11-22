@@ -10,6 +10,7 @@ import (
 
 	"github.com/miekg/dns"
 	"github.com/moi-si/addrtrie"
+	"golang.org/x/text/encoding/charmap"
 )
 
 type Policy struct {
@@ -23,7 +24,6 @@ type Policy struct {
 	TLS13Only  *bool   `json:"tls13_only"`
 	Mode       string  `json:"mode"`
 	NumRecords int     `json:"num_records"`
-	FakePacket string  `json:"fake_packet"`
 	FakeTTL    int     `json:"fake_ttl"`
 	FakeSleep  float64 `json:"fake_sleep"`
 }
@@ -57,7 +57,6 @@ func (p Policy) String() string {
 	case "tls-rf":
 		fields = append(fields, fmt.Sprintf("%d records", p.NumRecords))
 	case "ttl-d":
-		fields = append(fields, "fake_packet: "+escape(p.FakePacket))
 		if p.FakeTTL == 0 {
 			fields = append(fields, "auto_fake_ttl")
 		} else {
@@ -98,9 +97,6 @@ func mergePolicies(policies ...Policy) *Policy {
 		if p.NumRecords != 0 {
 			merged.NumRecords = p.NumRecords
 		}
-		if p.FakePacket != "" {
-			merged.FakePacket = p.FakePacket
-		}
 		if p.FakeSleep != 0 {
 			merged.FakeSleep = p.FakeSleep
 		}
@@ -116,6 +112,7 @@ type Config struct {
 	DNSAddr           string            `json:"udp_dns_addr"`
 	UDPSize           uint16            `json:"udp_minsize"`
 	DefaultHttpPolicy int               `json:"default_http_policy"`
+	FakePacket        string            `json:"fake_packet"`
 	FakeTTLRules      string            `json:"fake_ttl_rules"`
 	DefaultPolicy     Policy            `json:"default_policy"`
 	DomainPolicies    map[string]Policy `json:"domain_policies"`
@@ -124,6 +121,7 @@ type Config struct {
 
 var (
 	defaultPolicy Policy
+	fakePacket    []byte
 	dnsAddr       string
 	calcTTL       func(int) (int, error)
 	domainMatcher *addrtrie.DomainMatcher[Policy]
@@ -240,7 +238,6 @@ func loadConfig(filePath string) (string, error) {
 	defer file.Close()
 
 	decoder := json.NewDecoder(file)
-	decoder.DisallowUnknownFields()
 	var conf Config
 	if err = decoder.Decode(&conf); err != nil {
 		return "", err
@@ -251,6 +248,12 @@ func loadConfig(filePath string) (string, error) {
 		dnsClient = new(dns.Client)
 	} else {
 		dnsClient = &dns.Client{UDPSize: conf.UDPSize}
+	}
+	if conf.FakePacket != "" {
+		var encoder = charmap.ISO8859_1.NewEncoder()
+		if fakePacket, err = encoder.Bytes([]byte(conf.FakePacket)); err != nil {
+			return "", fmt.Errorf("fake packet encoding failed: %v", err)
+		}
 	}
 	if conf.FakeTTLRules != "" {
 		loadFakeTTLRules(conf.FakeTTLRules)

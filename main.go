@@ -437,11 +437,6 @@ func handleClient(clientConn net.Conn) {
 				}
 				logger.Println("Successfully sent ClientHello")
 			case "ttl-d":
-				fakePacketBytes, err := encode(policy.FakePacket)
-				if err != nil {
-					logger.Println("Fake packet encoding fail:", err)
-					return
-				}
 				var ttl int
 				ipv6 := target[0] == '['
 				if policy.FakeTTL == 0 {
@@ -471,7 +466,7 @@ func handleClient(clientConn net.Conn) {
 					ttl = policy.FakeTTL
 				}
 				err = desyncSend(
-					dstConn, ipv6, record, fakePacketBytes,
+					dstConn, ipv6, record, fakePacket,
 					sniPos, sniLen, ttl, policy.FakeSleep,
 				)
 				if err != nil {

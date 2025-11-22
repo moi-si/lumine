@@ -97,21 +97,21 @@ func sendFakeData(
 	)
 	defer windows.CloseHandle(fileHandle)
 	if err != nil {
-		return fmt.Errorf("failed to create file: %v", err)
+		return fmt.Errorf("create file: %v", err)
 	}
 
 	var ov windows.Overlapped
 	eventHandle, err := windows.CreateEvent(nil, 1, 0, nil)
 	defer windows.CloseHandle(eventHandle)
 	if err != nil {
-		return fmt.Errorf("failed to create event: %v", err)
+		return fmt.Errorf("create event: %v", err)
 	}
 	ov.HEvent = eventHandle
 
 	var zero *int32
 	_, err = windows.SetFilePointer(fileHandle, 0, zero, 0)
 	if err != nil {
-		return fmt.Errorf("failed to set file pointer: %v", err)
+		return fmt.Errorf("set file pointer: %v", err)
 	}
 	err = windows.WriteFile(
 		fileHandle,
@@ -120,21 +120,21 @@ func sendFakeData(
 		&ov,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to write fake data: %v", err)
+		return fmt.Errorf("write fake data: %v", err)
 	}
 	if err = windows.SetEndOfFile(fileHandle); err != nil {
-		return fmt.Errorf("failed to set end of file: %v", err)
+		return fmt.Errorf("set end of file: %v", err)
 	}
 	err = windows.SetsockoptInt(sockHandle, level, opt, fakeTTL)
 	if err != nil {
-		return fmt.Errorf("failed to set fake TTL: %v", err)
+		return fmt.Errorf("set fake TTL: %v", err)
 	}
 
 	_, err = windows.SetFilePointer(fileHandle, 0, zero, 0)
 	if err != nil {
-		return fmt.Errorf("failed to set file pointer: %v", err)
+		return fmt.Errorf("set file pointer: %v", err)
 	}
-	_ = windows.TransmitFile(
+	windows.TransmitFile(
 		sockHandle,
 		fileHandle,
 		toWrite,
@@ -146,7 +146,7 @@ func sendFakeData(
 	time.Sleep(time.Duration(fakeSleep * float64(time.Second)))
 
 	if _, err = windows.SetFilePointer(fileHandle, 0, zero, 0); err != nil {
-		return fmt.Errorf("failed to set file pointer: %v", err)
+		return fmt.Errorf("set file pointer: %v", err)
 	}
 	err = windows.WriteFile(
 		fileHandle,
@@ -155,17 +155,17 @@ func sendFakeData(
 		&ov,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to write real data: %v", err)
+		return fmt.Errorf("write real data: %v", err)
 	}
 	if err = windows.SetEndOfFile(fileHandle); err != nil {
-		return fmt.Errorf("failed to set end of file: %v", err)
+		return fmt.Errorf("set end of file: %v", err)
 	}
 	_, err = windows.SetFilePointer(fileHandle, 0, zero, 0)
 	if err != nil {
-		return fmt.Errorf("failed to set file pointer: %v", err)
+		return fmt.Errorf("set file pointer: %v", err)
 	}
 	if err = windows.SetsockoptInt(sockHandle, level, opt, defaultTTL); err != nil {
-		return fmt.Errorf("failed to set default TTL: %v", err)
+		return fmt.Errorf("set default TTL: %v", err)
 	}
 
 	val, err := windows.WaitForSingleObject(ov.HEvent, 5000)
@@ -187,18 +187,18 @@ func desyncSend(
 		return errors.New("not *net.TCPConn")
 	}
 	if err := tcpConn.SetNoDelay(true); err != nil {
-		return fmt.Errorf("failed to set TCP_NODELAY: %v", err)
+		return fmt.Errorf("set TCP_NODELAY: %v", err)
 	}
 	rawConn, err := tcpConn.SyscallConn()
 	if err != nil {
-		return fmt.Errorf("failed to get rawConn: %v", err)
+		return fmt.Errorf("get rawConn: %v", err)
 	}
 	var sockHandle windows.Handle
 	controlErr := rawConn.Control(func(fd uintptr) {
 		sockHandle = windows.Handle(fd)
 	})
 	if controlErr != nil {
-		return fmt.Errorf("control error: %v", err)
+		return fmt.Errorf("control: %v", err)
 	}
 
 	var level, opt int
@@ -211,7 +211,7 @@ func desyncSend(
 	}
 	defaultTTL, err := windows.GetsockoptInt(sockHandle, level, opt)
 	if err != nil {
-		return fmt.Errorf("failed to get default TTL: %v", err)
+		return fmt.Errorf("get default TTL: %v", err)
 	}
 	dataLen := len(fakeData)
 	err = sendFakeData(
@@ -225,18 +225,18 @@ func desyncSend(
 		fakeSleep,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to send first fake data: %v", err)
+		return fmt.Errorf("send first fake data: %v", err)
 	}
 	firstPacket = firstPacket[dataLen:]
 	offset := sniLen/2 + sniPos - dataLen
 	if offset <= 0 {
 		if _, err = conn.Write(firstPacket); err != nil {
-			return fmt.Errorf("failed to send data after first fake packet: %v", err)
+			return fmt.Errorf("send data after first fake packet: %v", err)
 		}
 		return nil
 	}
 	if _, err = conn.Write(firstPacket[:offset]); err != nil {
-		return fmt.Errorf("failed to send data after first fake packet: %v", err)
+		return fmt.Errorf("send data after first fake packet: %v", err)
 	}
 	firstPacket = firstPacket[offset:]
 	err = sendFakeData(
@@ -250,10 +250,10 @@ func desyncSend(
 		fakeSleep,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to send second fake data: %v", err)
+		return fmt.Errorf("send second fake data: %v", err)
 	}
 	if _, err = conn.Write(firstPacket[dataLen:]); err != nil {
-		return fmt.Errorf("failed to send remaining data: %v", err)
+		return fmt.Errorf("send remaining data: %v", err)
 	}
 
 	return nil

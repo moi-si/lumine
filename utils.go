@@ -10,10 +10,7 @@ import (
 	"strings"
 
 	"github.com/miekg/dns"
-	"golang.org/x/text/encoding/charmap"
 )
-
-var encoder = charmap.ISO8859_1.NewEncoder()
 
 func parseClientHello(data []byte) (prtVer []byte, sniPos int, sniLen int, hasKeyShare bool, err error) {
 	const (
@@ -148,14 +145,6 @@ func sendTLSAlert(conn net.Conn, prtVer []byte, desc byte, level byte) error {
 	return err
 }
 
-func encode(s string) ([]byte, error) {
-	b, err := encoder.Bytes([]byte(s))
-	if err != nil {
-		return nil, fmt.Errorf("encoding ISO-8859-1 failed: %v", err)
-	}
-	return b, nil
-}
-
 func expandPattern(s string) []string {
 	left := -1
 	right := -1
@@ -279,7 +268,7 @@ func ipRedirect(logger *log.Logger, ip string) (string, *Policy) {
 	}
 	mapTo := *policy.MapTo
 	var chain bool
-	if mapTo[:1] == "^" {
+	if mapTo[0] == '^' {
 		mapTo = mapTo[1:]
 	} else {
 		chain = true
@@ -299,12 +288,6 @@ func ipRedirect(logger *log.Logger, ip string) (string, *Policy) {
 		return ipRedirect(logger, mapTo)
 	}
 	return mapTo, matchIP(mapTo)
-}
-
-func escape(s string) string {
-	s = strings.ReplaceAll(s, "\r", "\\r")
-	s = strings.ReplaceAll(s, "\n", "\\n")
-	return s
 }
 
 var dnsClient *dns.Client
