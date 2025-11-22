@@ -111,6 +111,7 @@ type Config struct {
 	ServerAddr        string            `json:"server_address"`
 	DNSAddr           string            `json:"udp_dns_addr"`
 	UDPSize           uint16            `json:"udp_minsize"`
+	MaxJump           uint8             `json:"max_jump"`
 	DefaultHttpPolicy int               `json:"default_http_policy"`
 	FakePacket        string            `json:"fake_packet"`
 	FakeTTLRules      string            `json:"fake_ttl_rules"`
@@ -123,6 +124,7 @@ var (
 	defaultPolicy Policy
 	fakePacket    []byte
 	dnsAddr       string
+	maxJump       uint8
 	calcTTL       func(int) (int, error)
 	domainMatcher *addrtrie.DomainMatcher[Policy]
 	ipMatcher     *addrtrie.BitTrie[Policy]
@@ -248,6 +250,11 @@ func loadConfig(filePath string) (string, error) {
 		dnsClient = new(dns.Client)
 	} else {
 		dnsClient = &dns.Client{UDPSize: conf.UDPSize}
+	}
+	if conf.MaxJump == 0 {
+		maxJump = 20
+	} else {
+		maxJump = conf.MaxJump
 	}
 	if conf.FakePacket != "" {
 		var encoder = charmap.ISO8859_1.NewEncoder()

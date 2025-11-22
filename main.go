@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -40,6 +41,44 @@ func sendReply(logger *log.Logger, conn net.Conn, rep byte) {
 	if _, err := conn.Write(resp); err != nil {
 		logger.Println("ERROR send SOCKS5 reply:", err)
 	}
+}
+
+func ipRedirect(logger *log.Logger, ip string) (string, *Policy, error) {
+	for range maxJump {
+		policy := matchIP(ip)
+		if policy == nil {
+			return ip, nil, nil
+		}
+		if policy.MapTo == nil || *policy.MapTo == "" {
+			return ip, policy, nil
+		}
+
+		mapTo := *policy.MapTo
+		var chain bool
+		if mapTo[0] == '^' {
+			mapTo = mapTo[1:]
+		} else {
+			chain = true
+		}
+		if strings.Contains(mapTo, "/") {
+			var err error
+			mapTo, err = transformIP(ip, mapTo)
+			if err != nil {
+				return "", nil, err
+			}
+		}
+		if ip == mapTo {
+			return ip, policy, nil
+		}
+		logger.Printf("Redirect %s to %s", ip, mapTo)
+
+		if chain {
+			ip = mapTo
+			continue
+		}
+		return mapTo, matchIP(mapTo), nil
+	}
+	return "", nil, errors.New("too many redirects")
 }
 
 func handleClient(clientConn net.Conn) {
@@ -101,7 +140,11 @@ func handleClient(clientConn net.Conn) {
 		}
 		dstAddr = net.IP(ipBytes).String()
 		var ipPolicy *Policy
-		dstHost, ipPolicy = ipRedirect(logger, dstAddr)
+		dstHost, ipPolicy, err = ipRedirect(logger, dstAddr)
+		if err != nil {
+			logger.Println("IP redirect error:", err)
+			return
+		}
 		if ipPolicy == nil {
 			policy = &defaultPolicy
 		} else {
@@ -115,7 +158,11 @@ func handleClient(clientConn net.Conn) {
 		}
 		dstAddr = net.IP(ipBytes).String()
 		var ipPolicy *Policy
-		dstHost, ipPolicy = ipRedirect(logger, dstAddr)
+		dstHost, ipPolicy, err = ipRedirect(logger, dstAddr)
+		if err != nil {
+			logger.Println("IP redirect error:", err)
+			return
+		}
 		if ipPolicy == nil {
 			policy = &defaultPolicy
 		} else {
@@ -136,7 +183,11 @@ func handleClient(clientConn net.Conn) {
 		// For Firefox
 		if net.ParseIP(dstAddr) != nil {
 			var ipPolicy *Policy
-			dstHost, ipPolicy = ipRedirect(logger, dstAddr)
+			dstHost, ipPolicy, err = ipRedirect(logger, dstAddr)
+			if err != nil {
+				logger.Println("IP redirect error:", err)
+				return
+			}
 			if ipPolicy == nil {
 				policy = &defaultPolicy
 			} else {
@@ -192,7 +243,11 @@ func handleClient(clientConn net.Conn) {
 			}
 			var ipPolicy *Policy
 			if !disableRedirect {
-				dstHost, ipPolicy = ipRedirect(logger, dstHost)
+				dstHost, ipPolicy, err = ipRedirect(logger, dstHost)
+				if err != nil {
+					logger.Println("IP redirect error:", err)
+					return
+				}
 				if ipPolicy != nil {
 					if found {
 						policy = mergePolicies(defaultPolicy, *ipPolicy, *domainPolicy)
@@ -225,15 +280,6 @@ func handleClient(clientConn net.Conn) {
 	target := net.JoinHostPort(dstHost, fmt.Sprintf("%d", dstPort))
 
 	var dstConn net.Conn
-	var once sync.Once
-	closeBoth := func() {
-		once.Do(func() {
-			clientConn.Close()
-			if dstConn != nil {
-				dstConn.Close()
-			}
-		})
-	}
 	replyFirst := policy.ReplyFirst != nil && *policy.ReplyFirst
 	if replyFirst {
 		sendReply(logger, clientConn, 0x00)
@@ -299,7 +345,11 @@ func handleClient(clientConn net.Conn) {
 		}
 		if policy.Host != nil && *policy.Host != "" {
 			if (*policy.Host)[0] != '^' {
-				_, ipPolicy := ipRedirect(logger, *policy.Host)
+				_, ipPolicy, err := ipRedirect(logger, *policy.Host)
+				if err != nil {
+					logger.Println("IP redirect error:", err)
+					return
+				}
 				policy = mergePolicies(defaultPolicy, *ipPolicy, *policy)
 			}
 		}
@@ -488,16 +538,25 @@ func handleClient(clientConn net.Conn) {
 		}
 	}
 
+	var once sync.Once
+	closeBoth := func() {
+		once.Do(func() {
+			clientConn.Close()
+			if dstConn != nil {
+				dstConn.Close()
+			}
+		})
+	}
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		_, _ = io.Copy(dstConn, clientConn)
+		io.Copy(dstConn, clientConn)
 		closeBoth()
 	}()
 	go func() {
 		defer wg.Done()
-		_, _ = io.Copy(clientConn, dstConn)
+		io.Copy(clientConn, dstConn)
 		closeBoth()
 	}()
 	wg.Wait()

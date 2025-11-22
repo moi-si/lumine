@@ -4,10 +4,8 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"log"
 	"math/big"
 	"net"
-	"strings"
 
 	"github.com/miekg/dns"
 )
@@ -256,38 +254,6 @@ func transformIP(ipStr string, targetNetStr string) (string, error) {
 	}
 
 	return net.IP(newIPBytes).String(), nil
-}
-
-func ipRedirect(logger *log.Logger, ip string) (string, *Policy) {
-	policy := matchIP(ip)
-	if policy == nil {
-		return ip, nil
-	}
-	if policy.MapTo == nil || *policy.MapTo == "" {
-		return ip, policy
-	}
-	mapTo := *policy.MapTo
-	var chain bool
-	if mapTo[0] == '^' {
-		mapTo = mapTo[1:]
-	} else {
-		chain = true
-	}
-	if strings.Contains(mapTo, "/") {
-		var err error
-		mapTo, err = transformIP(ip, mapTo)
-		if err != nil {
-			panic(err)
-		}
-	}
-	if ip == mapTo {
-		return ip, policy
-	}
-	logger.Printf("Redirect %s to %s", ip, mapTo)
-	if chain {
-		return ipRedirect(logger, mapTo)
-	}
-	return mapTo, matchIP(mapTo)
 }
 
 var dnsClient *dns.Client
