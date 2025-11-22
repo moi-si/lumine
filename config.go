@@ -56,7 +56,7 @@ func (p Policy) String() string {
 	fields = append(fields, p.Mode)
 	switch p.Mode {
 	case "tls-rf":
-		fields = append(fields, fmt.Sprintf("%d records", p.NumSegments))
+		fields = append(fields, fmt.Sprintf("%d records", p.NumRecords))
 		if p.NumSegments != -1 {
 			fields = append(fields, fmt.Sprintf("%d segments", p.NumSegments))
 		}
