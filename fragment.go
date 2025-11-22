@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
+	"time"
 )
 
-func sendRecords(conn net.Conn, data []byte, offset, length, numRcd, numSeg int) error {
+func sendRecords(conn net.Conn, data []byte, offset, length, numRcd, numSeg int, interval *float64) error {
 	if len(data) < 5 {
 		return errors.New("data too short")
 	}
@@ -58,6 +59,7 @@ func sendRecords(conn net.Conn, data []byte, offset, length, numRcd, numSeg int)
 	}
 
 	base := len(merged) / numSeg
+	itv := interval != nil && *interval > 0
 	for i := range numSeg {
 		start := i * base
 		end := start + base
@@ -66,6 +68,9 @@ func sendRecords(conn net.Conn, data []byte, offset, length, numRcd, numSeg int)
 		}
 		if _, err := conn.Write(merged[start:end]); err != nil {
 			return fmt.Errorf("segment %d write error: %w", i, err)
+		}
+		if itv {
+			time.Sleep(time.Duration(*interval * float64(time.Second)))
 		}
 	}
 	return nil

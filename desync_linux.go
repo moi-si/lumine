@@ -42,7 +42,8 @@ func tryConnectWithTTL(target string, level, opt, ttl int) (bool, error) {
 }
 
 func minReachableTTL(target string, ipv6 bool) (int, error) {
-	var level, opt int
+	return 0, fmt.Errorf("Linux/Android is not supported yet")
+	/*var level, opt int
 	if ipv6 {
 		level, opt = unix.IPPROTO_IPV6, unix.IPV6_UNICAST_HOPS
 	} else {
@@ -63,7 +64,7 @@ func minReachableTTL(target string, ipv6 bool) (int, error) {
 			low = mid + 1
 		}
 	}
-	return found, nil
+	return found, nil*/
 }
 
 func sendFakeData(
