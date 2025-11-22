@@ -34,15 +34,8 @@ func readN(conn net.Conn, n int) ([]byte, error) {
 	return buf, err
 }
 
-func sendReply(logger *log.Logger, conn net.Conn, rep byte, bindIP net.IP, bindPort uint16) {
-	if bindIP == nil {
-		bindIP = net.IPv4zero
-	}
-	resp := []byte{0x05, rep, 0x00, 0x01}
-	resp = append(resp, bindIP.To4()...)
-	portBytes := make([]byte, 2)
-	binary.BigEndian.AppendUint16(portBytes, bindPort)
-	resp = append(resp, portBytes...)
+func sendReply(logger *log.Logger, conn net.Conn, rep byte) {
+	resp := []byte{0x05, rep, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
 	if _, err := conn.Write(resp); err != nil {
 		logger.Println("ERROR send SOCKS5 reply:", err)
 	}
@@ -92,7 +85,7 @@ func handleClient(clientConn net.Conn) {
 	}
 	if header[1] != 0x01 {
 		logger.Println("Not CONNECT:", header[1])
-		sendReply(logger, clientConn, 0x07, nil, 0)
+		sendReply(logger, clientConn, 0x07)
 		return
 	}
 
@@ -175,7 +168,7 @@ func handleClient(clientConn net.Conn) {
 					dstHost, err1, err2 = doubleQuery(dstAddr, first, second)
 					if err2 != nil {
 						logger.Printf("ERROR resolve %s: err1=%s; err2=%s", dstAddr, err1, err2)
-						sendReply(logger, clientConn, 0x01, nil, 0)
+						sendReply(logger, clientConn, 0x01)
 						return
 					}
 				} else {
@@ -183,7 +176,7 @@ func handleClient(clientConn net.Conn) {
 					dstHost, err = dnsQuery(dstAddr, first)
 					if err != nil {
 						logger.Printf("ERROR resolve %s: %s", dstAddr, err)
-						sendReply(logger, clientConn, 0x01, nil, 0)
+						sendReply(logger, clientConn, 0x01)
 						return
 					}
 					logger.Printf("DNS %s -> %s", dstAddr, dstHost)
@@ -210,7 +203,7 @@ func handleClient(clientConn net.Conn) {
 		}
 	default:
 		logger.Println("Invalid address type:", header[3])
-		sendReply(logger, clientConn, 0x08, nil, 0)
+		sendReply(logger, clientConn, 0x08)
 		return
 	}
 	portBytes, err := readN(clientConn, 2)
@@ -223,7 +216,7 @@ func handleClient(clientConn net.Conn) {
 	logger.Printf("CONNECT %s -> %s", oldTarget, policy)
 	if policy.Mode == "block" {
 		logger.Println("Connection blocked")
-		sendReply(logger, clientConn, 0x02, nil, 0)
+		sendReply(logger, clientConn, 0x02)
 		return
 	}
 	if policy.Port != nil && *policy.Port != 0 {
@@ -234,15 +227,15 @@ func handleClient(clientConn net.Conn) {
 	var dstConn net.Conn
 	replyFirst := policy.ReplyFirst != nil && *policy.ReplyFirst
 	if replyFirst {
-		sendReply(logger, clientConn, 0x00, nil, 0)
+		sendReply(logger, clientConn, 0x00)
 	} else {
 		dstConn, err = net.Dial("tcp", target)
 		if err != nil {
 			logger.Println("Connection failed:", err)
-			sendReply(logger, clientConn, 0x01, nil, 0)
+			sendReply(logger, clientConn, 0x01)
 			return
 		}
-		sendReply(logger, clientConn, 0x00, nil, 0)
+		sendReply(logger, clientConn, 0x00)
 		defer dstConn.Close()
 	}
 
@@ -447,19 +440,19 @@ func handleClient(clientConn net.Conn) {
 					ttl, err = minReachableTTL(target, ipv6)
 					if err != nil {
 						logger.Println("Probe TTL failed:", err)
-						sendReply(logger, clientConn, 0x01, nil, 0)
+						sendReply(logger, clientConn, 0x01)
 						return
 					}
 					if ttl == -1 {
 						logger.Println("Reachable TTL not found")
-						sendReply(logger, clientConn, 0x01, nil, 0)
+						sendReply(logger, clientConn, 0x01)
 						return
 					}
 					if calcTTL != nil {
 						ttl, err = calcTTL(ttl)
 						if err != nil {
 							logger.Println("ERROR calculate TTL:", err)
-							sendReply(logger, clientConn, 0x01, nil, 0)
+							sendReply(logger, clientConn, 0x01)
 							return
 						}
 					} else {
