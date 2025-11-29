@@ -44,6 +44,16 @@ func sendRecords(conn net.Conn, data []byte, offset, length, numRcd, numSeg int,
 	splitAndAppend(payload[:cut], header, leftChunks, &chunks)
 	splitAndAppend(payload[cut:], header, rightChunks, &chunks)
 
+	if numSeg == -1 {
+		for _, chunk := range chunks {
+			_, err := conn.Write(chunk)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
 	total := 0
 	for _, c := range chunks {
 		total += len(c)
@@ -53,7 +63,7 @@ func sendRecords(conn net.Conn, data []byte, offset, length, numRcd, numSeg int,
 		merged = append(merged, c...)
 	}
 
-	if numSeg == -1 || numSeg == 1 || len(merged) <= numSeg {
+	if numSeg == 1 || len(merged) <= numSeg {
 		_, err := conn.Write(merged)
 		return err
 	}

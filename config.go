@@ -25,7 +25,7 @@ type Policy struct {
 	Mode         string   `json:"mode"`
 	NumRecords   int      `json:"num_records"`
 	NumSegments  int      `json:"num_segs"`
-	SendInterval *float64 `json:"send_interval"`
+	SendDelay *float64 `json:"send_delay"`
 	FakeTTL      int      `json:"fake_ttl"`
 	FakeSleep    float64  `json:"fake_sleep"`
 }
@@ -62,10 +62,10 @@ func (p Policy) String() string {
 			fields = append(fields, fmt.Sprintf("%d segments", p.NumSegments))
 		}
 		if p.NumSegments != 1 {
-			if p.SendInterval == nil || *p.SendInterval <= 0 {
+			if p.SendDelay == nil || *p.SendDelay <= 0 {
 				fields = append(fields, "no_interval")
 			} else {
-				fields = append(fields, fmt.Sprintf("%.1f-second interval", *p.SendInterval))
+				fields = append(fields, fmt.Sprintf("%.1f-second interval", *p.SendDelay))
 			}
 		}
 	case "ttl-d":
@@ -112,8 +112,8 @@ func mergePolicies(policies ...Policy) *Policy {
 		if p.NumSegments != 0 {
 			merged.NumSegments = p.NumSegments
 		}
-		if p.SendInterval != nil {
-			merged.SendInterval = p.SendInterval
+		if p.SendDelay != nil {
+			merged.SendDelay = p.SendDelay
 		}
 		if p.FakeSleep != 0 {
 			merged.FakeSleep = p.FakeSleep
@@ -130,7 +130,6 @@ type Config struct {
 	DNSAddr           string            `json:"udp_dns_addr"`
 	UDPSize           uint16            `json:"udp_minsize"`
 	MaxJump           uint8             `json:"max_jump"`
-	DefaultHttpPolicy int               `json:"default_http_policy"`
 	FakePacket        string            `json:"fake_packet"`
 	FakeTTLRules      string            `json:"fake_ttl_rules"`
 	DefaultPolicy     Policy            `json:"default_policy"`

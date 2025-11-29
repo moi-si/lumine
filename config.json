@@ -26,9 +26,9 @@
             "tls13_only": false
         },
         "76.223.126.88;(216.150.1|216.150.16|216.198.79|216.230.84|216.230.86|64.29.17|76.76.21|66.33.60|198.169.1|198.169.2|64.239.109|64.239.123).0/24;64.125.81.216/29": {
-            "map_to": "18.162.37.140"
+            "map_to": "35.180.16.12"
         },
-        "18.162.37.140": {
+        "35.180.16.12": {
             "mode": "raw"
         },
         "(151.101|146.75|199.232).0.0/16": {
@@ -53,9 +53,6 @@
         "(*.|)cloudflare.com;cloudflare-dns.com;one.one.one.one;*workers.dev": {
             "host": "www.ietf.org",
             "port": 8443
-        },
-        "*linux.do": {
-            "host": "linux.do.cdn.cloudflare.net"
         },
         "www.notion.so": {
             "host": "208.103.161.2"
@@ -98,7 +95,11 @@
             "host": "199.232.137.164"
         },
         "*(google.com|google.com.hk|gmail.com|google.dev|googleapis.com|gstatic.com|googleusercontent.com|.google|goo.gl|translate.goog|android.com|ai.dev|blogger.com|blogspot.com|blogblog.com|chrome.com|chromium.org|golang.org|youtube.com|youtu.be|youtube-nocookie.com|.ytimg.com|.ggpht.com|gvt1.com|withgoogle.com|googlesource.com)": {
-            "host": "35.190.247.10"
+            "host": "35.190.247.233"
+        },
+        "www.gstatic.com": {},
+        "*googlevideo.com": {
+            "ipv6_first": true
         },
         "client2.google.com": {
             "http_status": 403

@@ -480,7 +480,7 @@ func handleClient(clientConn net.Conn) {
 				}
 				logger.Println("Sent ClientHello directly")
 			case "tls-rf":
-				err = sendRecords(dstConn, record, sniPos, sniLen, policy.NumRecords, policy.NumSegments, policy.SendInterval)
+				err = sendRecords(dstConn, record, sniPos, sniLen, policy.NumRecords, policy.NumSegments, policy.SendDelay)
 				if err != nil {
 					logger.Println("TLS fragmentation fail:", err)
 					return
@@ -563,7 +563,7 @@ func handleClient(clientConn net.Conn) {
 }
 
 func main() {
-	fmt.Println("moi-si/lumine v0.0.9")
+	fmt.Println("moi-si/lumine v0.0.10")
 	configPath := flag.String("config", "config.json", "Config file path")
 	addr := flag.String("addr", "", "Bind address (default: address from config file)")
 	flag.Parse()
