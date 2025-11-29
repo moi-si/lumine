@@ -24,7 +24,8 @@ Field|Description|Example|Special Values
 Field|Description|Example|Special Values
 -|-|-|-
 `reply_first`|Send SOCKS5 reply SUCCESS before connecting|`true`|-
-`host`|Override target host|`"208.103.161.2"`, `"www.ietf.org"`|Prefix `^` disables IP redirection
+`host`|Override target host|`"^208.103.161.2"`, `"www.ietf.org"`|Prefix `^` disables IP redirection
+`map_to`|Redirect IP to another host/CIDR|`"35.180.16.12"`, `"^www.fbi.org"`|Prefix `^` disables chain jump
 `port`|Override target port|`8443`|`0` uses original port
 `dns_retry`|Enable dual DNS query (A+AAAA)|`false`|-
 `ipv6_first`|Prefer IPv6 over IPv4 resolution|`false`|-

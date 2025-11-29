@@ -455,11 +455,13 @@ func handleClient(clientConn net.Conn) {
 				}
 				switch domainPolicy.Mode {
 				case "block":
+					logger.Println("Connection blocked")
 					return
 				case "tls-alert":
 					if err = sendTLSAlert(clientConn, prtVer, 49, 2); err != nil {
 						logger.Println("Send TLS alert fail:", err)
 					}
+					logger.Println("Connection blocked (tls-alert)")
 					return
 				}
 			}
