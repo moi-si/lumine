@@ -14,21 +14,9 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"sync/atomic"
 
 	"github.com/miekg/dns"
 )
-
-var connID uint32
-
-func makeLogger() *log.Logger {
-	id := atomic.AddUint32(&connID, 1)
-	if id > 0xFFFF {
-		atomic.StoreUint32(&connID, 0)
-		id = 0
-	}
-	return log.New(os.Stdout, fmt.Sprintf("[%05x] ", id), log.LstdFlags)
-}
 
 func readN(conn net.Conn, n int) ([]byte, error) {
 	buf := make([]byte, n)
@@ -81,9 +69,22 @@ func ipRedirect(logger *log.Logger, ip string) (string, *Policy, error) {
 	return "", nil, errors.New("too many redirects")
 }
 
-func handleClient(clientConn net.Conn) {
-	defer clientConn.Close()
-	logger := makeLogger()
+func handleClient(clientConn net.Conn, id uint32) {
+	var (
+		once sync.Once
+		dstConn net.Conn
+	)
+	closeBoth := func() {
+		once.Do(func() {
+			clientConn.Close()
+			if dstConn != nil {
+				dstConn.Close()
+			}
+		})
+	}
+	defer closeBoth()
+
+	logger := log.New(os.Stdout, fmt.Sprintf("[%05x] ", id), log.LstdFlags)
 	logger.Println("Conn from", clientConn.RemoteAddr().String())
 
 	header, err := readN(clientConn, 2)
@@ -279,7 +280,6 @@ func handleClient(clientConn net.Conn) {
 	}
 	target := net.JoinHostPort(dstHost, fmt.Sprintf("%d", dstPort))
 
-	var dstConn net.Conn
 	replyFirst := policy.ReplyFirst != nil && *policy.ReplyFirst
 	if replyFirst {
 		sendReply(logger, clientConn, 0x00)
@@ -291,7 +291,6 @@ func handleClient(clientConn net.Conn) {
 			return
 		}
 		sendReply(logger, clientConn, 0x00)
-		defer dstConn.Close()
 	}
 
 	if policy.Mode == "raw" {
@@ -301,7 +300,6 @@ func handleClient(clientConn net.Conn) {
 				logger.Println("Connection failed:", err)
 				return
 			}
-			defer dstConn.Close()
 		}
 		go io.Copy(clientConn, dstConn)
 		io.Copy(dstConn, clientConn)
@@ -373,7 +371,6 @@ func handleClient(clientConn net.Conn) {
 					}
 					return
 				}
-				defer dstConn.Close()
 			}
 			if err := req.Write(dstConn); err != nil {
 				logger.Println("Forward req fail:", err)
@@ -436,7 +433,6 @@ func handleClient(clientConn net.Conn) {
 					logger.Println("Connection failed:", err)
 					return
 				}
-				defer dstConn.Close()
 			}
 			if _, err = dstConn.Write(record); err != nil {
 				logger.Println("Send ClientHello directly fail:", err)
@@ -472,7 +468,6 @@ func handleClient(clientConn net.Conn) {
 					logger.Println("Connection failed:", err)
 					return
 				}
-				defer dstConn.Close()
 			}
 			switch policy.Mode {
 			case "direct":
@@ -536,19 +531,9 @@ func handleClient(clientConn net.Conn) {
 				logger.Println("Connection failed:", err)
 				return
 			}
-			defer dstConn.Close()
 		}
 	}
 
-	var once sync.Once
-	closeBoth := func() {
-		once.Do(func() {
-			clientConn.Close()
-			if dstConn != nil {
-				dstConn.Close()
-			}
-		})
-	}
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
@@ -586,12 +571,18 @@ func main() {
 		panic(fmt.Sprintf("Listen error: %s", err))
 	}
 	fmt.Println("Listening on", listenAddr)
+
+	var connID uint32
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
 			log.Printf("Error accept: %s", err)
 		} else {
-			go handleClient(conn)
+			connID += 1
+			if connID > 0xFFFFF {
+				connID = 0
+			}
+			go handleClient(conn, connID)
 		}
 	}
 }
