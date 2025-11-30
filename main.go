@@ -71,7 +71,7 @@ func ipRedirect(logger *log.Logger, ip string) (string, *Policy, error) {
 
 func handleClient(clientConn net.Conn, id uint32) {
 	var (
-		once sync.Once
+		once    sync.Once
 		dstConn net.Conn
 	)
 	closeBoth := func() {
@@ -550,9 +550,9 @@ func handleClient(clientConn net.Conn, id uint32) {
 }
 
 func main() {
-	fmt.Println("moi-si/lumine v0.0.10")
-	configPath := flag.String("config", "config.json", "Config file path")
-	addr := flag.String("addr", "", "Bind address (default: address from config file)")
+	fmt.Println("moi-si/lumine v0.1.0")
+	configPath := flag.String("c", "config.json", "Config file path")
+	addr := flag.String("b", "", "Bind address (default: address from config file)")
 	flag.Parse()
 	serverAddr, err := loadConfig(*configPath)
 	if err != nil {
