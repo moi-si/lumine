@@ -14,20 +14,20 @@ import (
 )
 
 type Policy struct {
-	ReplyFirst   *bool    `json:"reply_first"`
-	Host         *string  `json:"host"`
-	MapTo        *string  `json:"map_to"`
-	Port         *uint16  `json:"port"`
-	DNSRetry     *bool    `json:"dns_retry"`
-	IPv6First    *bool    `json:"ipv6_first"`
-	HttpStatus   int      `json:"http_status"`
-	TLS13Only    *bool    `json:"tls13_only"`
-	Mode         string   `json:"mode"`
-	NumRecords   int      `json:"num_records"`
-	NumSegments  int      `json:"num_segs"`
-	SendDelay *float64 `json:"send_delay"`
-	FakeTTL      int      `json:"fake_ttl"`
-	FakeSleep    float64  `json:"fake_sleep"`
+	ReplyFirst  *bool    `json:"reply_first"`
+	Host        *string  `json:"host"`
+	MapTo       *string  `json:"map_to"`
+	Port        *uint16  `json:"port"`
+	DNSRetry    *bool    `json:"dns_retry"`
+	IPv6First   *bool    `json:"ipv6_first"`
+	HttpStatus  int      `json:"http_status"`
+	TLS13Only   *bool    `json:"tls13_only"`
+	Mode        string   `json:"mode"`
+	NumRecords  int      `json:"num_records"`
+	NumSegments int      `json:"num_segs"`
+	SendDelay   *float64 `json:"send_delay"`
+	FakeTTL     int      `json:"fake_ttl"`
+	FakeSleep   float64  `json:"fake_sleep"`
 }
 
 func (p Policy) String() string {
@@ -126,15 +126,15 @@ func mergePolicies(policies ...Policy) *Policy {
 }
 
 type Config struct {
-	ServerAddr        string            `json:"server_address"`
-	DNSAddr           string            `json:"udp_dns_addr"`
-	UDPSize           uint16            `json:"udp_minsize"`
-	MaxJump           uint8             `json:"max_jump"`
-	FakePacket        string            `json:"fake_packet"`
-	FakeTTLRules      string            `json:"fake_ttl_rules"`
-	DefaultPolicy     Policy            `json:"default_policy"`
-	DomainPolicies    map[string]Policy `json:"domain_policies"`
-	IpPolicies        map[string]Policy `json:"ip_policies"`
+	ServerAddr     string            `json:"server_address"`
+	DNSAddr        string            `json:"udp_dns_addr"`
+	UDPSize        uint16            `json:"udp_minsize"`
+	MaxJump        uint8             `json:"max_jump"`
+	FakePacket     string            `json:"fake_packet"`
+	FakeTTLRules   string            `json:"fake_ttl_rules"`
+	DefaultPolicy  Policy            `json:"default_policy"`
+	DomainPolicies map[string]Policy `json:"domain_policies"`
+	IpPolicies     map[string]Policy `json:"ip_policies"`
 }
 
 var (
