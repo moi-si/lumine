@@ -45,10 +45,14 @@ func sendRecords(conn net.Conn, data []byte, offset, length, numRcd, numSeg int,
 	splitAndAppend(payload[cut:], header, rightChunks, &chunks)
 
 	if numSeg == -1 {
+		itv := interval != nil && *interval > 0
 		for _, chunk := range chunks {
 			_, err := conn.Write(chunk)
 			if err != nil {
 				return err
+			}
+			if itv {
+				time.Sleep(time.Duration(*interval * float64(time.Second)))
 			}
 		}
 		return nil

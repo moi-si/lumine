@@ -186,9 +186,6 @@ func desyncSend(
 	if !ok {
 		return errors.New("not *net.TCPConn")
 	}
-	if err := tcpConn.SetNoDelay(true); err != nil {
-		return fmt.Errorf("set TCP_NODELAY: %v", err)
-	}
 	rawConn, err := tcpConn.SyscallConn()
 	if err != nil {
 		return fmt.Errorf("get rawConn: %v", err)

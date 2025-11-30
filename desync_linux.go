@@ -10,7 +10,6 @@ import (
 	"net"
 	"syscall"
 	"time"
-	"unsafe"
 
 	"golang.org/x/sys/unix"
 )
@@ -42,8 +41,7 @@ func tryConnectWithTTL(target string, level, opt, ttl int) (bool, error) {
 }
 
 func minReachableTTL(target string, ipv6 bool) (int, error) {
-	return 0, fmt.Errorf("Linux/Android is not supported yet")
-	/*var level, opt int
+	var level, opt int
 	if ipv6 {
 		level, opt = unix.IPPROTO_IPV6, unix.IPV6_UNICAST_HOPS
 	} else {
@@ -64,48 +62,67 @@ func minReachableTTL(target string, ipv6 bool) (int, error) {
 			low = mid + 1
 		}
 	}
-	return found, nil*/
+	return found, nil
 }
 
 func sendFakeData(
-	fd int,
+	fd int, control func(func(fd uintptr)) error,
 	fakeData, realData []byte,
-	dataLen, fakeTTL, defaultTTL, level, opt int,
-	fakeSleep time.Duration,
+	fakeTTL, defaultTTL, level, opt int,
+	fakeSleep float64,
 ) error {
-	buf, err := unix.Mmap(
-		0,
-		0,
-		(dataLen+3)&^3,
-		unix.PROT_READ|unix.PROT_WRITE,
-		unix.MAP_PRIVATE|unix.MAP_ANONYMOUS,
-	)
-	if err != nil {
-		return fmt.Errorf("mmap: %s", err)
-	}
-	defer unix.Munmap(buf)
-	copy(buf[:dataLen], fakeData)
-	if err = unix.SetsockoptInt(fd, level, opt, fakeTTL); err != nil {
-		return fmt.Errorf("set fake ttl: %s", err)
-	}
 	pipeFds := make([]int, 2)
-	if err = unix.Pipe(pipeFds); err != nil {
-		return fmt.Errorf("create pipe: %s", err)
+	if err := unix.Pipe(pipeFds); err != nil {
+		return fmt.Errorf("pipe creation: %w", err)
 	}
-	defer unix.Close(pipeFds[0])
-	defer unix.Close(pipeFds[1])
-	vec := unix.Iovec{Base: (*byte)(unsafe.Pointer(&buf[0]))}
-	vec.SetLen(dataLen)
-	if _, err = unix.Vmsplice(pipeFds[1], []unix.Iovec{vec}, unix.SPLICE_F_GIFT); err != nil {
+	pipeR, pipeW := pipeFds[0], pipeFds[1]
+	defer unix.Close(pipeR)
+	defer unix.Close(pipeW)
+
+	pageSize := unix.Getpagesize()
+	nPages := (len(fakeData) + pageSize - 1) / pageSize
+	mmapLen := nPages * pageSize
+	data, err := unix.Mmap(-1, 0, mmapLen,
+		unix.PROT_READ|unix.PROT_WRITE,
+		unix.MAP_PRIVATE|unix.MAP_ANONYMOUS)
+	if err != nil {
+		return fmt.Errorf("mmap: %w", err)
+	}
+	defer unix.Munmap(data)
+	copy(data, fakeData)
+
+	var setErr error
+	err = control(func(fd uintptr) {
+		setErr = unix.SetsockoptInt(int(fd), level, opt, fakeTTL)
+	})
+	if err != nil {
+		return fmt.Errorf("control: %s", err)
+	}
+	if setErr != nil {
+		return fmt.Errorf("set ttl: %s", err)
+	}
+	iov := unix.Iovec{
+		Base: &data[0],
+		Len:  uint64(len(fakeData)),
+	}
+	if _, err := unix.Vmsplice(pipeW, []unix.Iovec{iov}, unix.SPLICE_F_GIFT); err != nil {
 		return fmt.Errorf("vmsplice: %s", err)
 	}
-	if _, err = unix.Splice(pipeFds[0], nil, pipeFds[1], nil, dataLen, 0); err != nil {
+	if _, err := unix.Splice(pipeR, nil, fd, nil, len(fakeData), 0); err != nil {
 		return fmt.Errorf("splice: %s", err)
 	}
-	time.Sleep(fakeSleep)
-	copy(buf[:dataLen], realData)
-	if err = unix.SetsockoptInt(fd, level, opt, defaultTTL); err != nil {
-		return fmt.Errorf("set default ttl: %s", err)
+	if fakeSleep < 0.1 {
+		fakeSleep = 0.1
+	}
+	time.Sleep(time.Duration(fakeSleep * float64(time.Second)))
+
+	copy(data, realData)
+
+	err = control(func(fd uintptr) {
+		setErr = unix.SetsockoptInt(int(fd), level, opt, defaultTTL)
+	})
+	if err != nil {
+		return fmt.Errorf("control: %s", err)
 	}
 	return nil
 }
@@ -118,22 +135,22 @@ func desyncSend(
 	if !ok {
 		return errors.New("not *net.TCPConn")
 	}
-	if err := tcpConn.SetNoDelay(true); err != nil {
-		return fmt.Errorf("set TCP_NODELAY: %v", err)
-	}
 	rawConn, err := tcpConn.SyscallConn()
 	if err != nil {
-		return fmt.Errorf("get raw conn: %v", err)
+		return fmt.Errorf("get rawConn: %v", err)
 	}
 	var fd int
-	controlErr := rawConn.Control(func(fileDesc uintptr) {
+	err = rawConn.Control(func(fileDesc uintptr) {
 		fd = int(fileDesc)
 	})
-	if controlErr != nil {
-		return fmt.Errorf("control: %v", err)
+	if err != nil {
+		return fmt.Errorf("control: %w", err)
 	}
 
-	var level, opt int
+	var (
+		level, opt, defaultTTL int
+		getErr                 error
+	)
 	if ipv6 {
 		level = unix.IPPROTO_IPV6
 		opt = unix.IPV6_UNICAST_HOPS
@@ -141,43 +158,43 @@ func desyncSend(
 		level = unix.IPPROTO_IP
 		opt = unix.IP_TTL
 	}
-	defaultTTL, err := unix.GetsockoptInt(fd, level, opt)
+	err = rawConn.Control(func(fd uintptr) {
+		defaultTTL, getErr = unix.GetsockoptInt(int(fd), level, opt)
+	})
 	if err != nil {
+		return fmt.Errorf("control: %s", err)
+	}
+	if getErr != nil {
 		return fmt.Errorf("get default ttl: %s", err)
 	}
+
 	dataLen := len(fakeData)
-	sleepSec := time.Duration(fakeSleep * float64(time.Second))
-	err = sendFakeData(
-		fd,
-		fakeData, firstPacket[:dataLen], dataLen,
-		fakeTTL, defaultTTL,
-		level, opt,
-		sleepSec,
-	)
+	if fakeSleep < 0.1 {
+		fakeSleep = 0.1
+	}
+	err = sendFakeData(fd, rawConn.Control,
+		fakeData, firstPacket[:dataLen],
+		fakeTTL, defaultTTL, level, opt, fakeSleep)
 	if err != nil {
-		return fmt.Errorf("send first fake data: %s", err)
+		return fmt.Errorf("send fake data: %s", err)
 	}
 	firstPacket = firstPacket[dataLen:]
 	offset := sniLen/2 + sniPos - dataLen
 	if offset <= 0 {
 		if _, err = conn.Write(firstPacket); err != nil {
-			return fmt.Errorf("send data after first fake packet: %s", err)
+			return fmt.Errorf("send remaining data: %v", err)
 		}
 		return nil
 	}
 	if _, err = conn.Write(firstPacket[:offset]); err != nil {
-		return fmt.Errorf("send data after first fake packet: %s", err)
+		return fmt.Errorf("send data after first faking: %v", err)
 	}
 	firstPacket = firstPacket[offset:]
-	err = sendFakeData(
-		fd,
-		fakeData, firstPacket[:dataLen], dataLen,
-		fakeTTL, defaultTTL,
-		level, opt,
-		sleepSec,
-	)
+	err = sendFakeData(fd, rawConn.Control,
+		fakeData, firstPacket[:dataLen],
+		fakeTTL, defaultTTL, level, opt, fakeSleep)
 	if err != nil {
-		return fmt.Errorf("send second fake data: %s", err)
+		return fmt.Errorf("send fake data (2): %s", err)
 	}
 	if _, err = conn.Write(firstPacket[dataLen:]); err != nil {
 		return fmt.Errorf("send remaining data: %s", err)
