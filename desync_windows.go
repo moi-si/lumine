@@ -10,14 +10,22 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
+	"unsafe"
 
 	"github.com/google/uuid"
 	"golang.org/x/sys/windows"
 )
 
+var ttlCache sync.Map
+
 func minReachableTTL(addr string, ipv6 bool) (int, error) {
+	v, ok := ttlCache.Load(addr)
+	if ok {
+		return v.(int), nil
+	}
 	var level, opt int
 	if ipv6 {
 		level, opt = windows.IPPROTO_IPV6, windows.IPV6_UNICAST_HOPS
@@ -40,6 +48,7 @@ func minReachableTTL(addr string, ipv6 bool) (int, error) {
 			low = mid + 1
 		}
 	}
+	ttlCache.Store(addr, found)
 	return found, nil
 }
 
@@ -182,11 +191,7 @@ func desyncSend(
 	conn net.Conn, ipv6 bool,
 	firstPacket, fakeData []byte, sniPos, sniLen, fakeTTL int, fakeSleep float64,
 ) error {
-	tcpConn, ok := conn.(*net.TCPConn)
-	if !ok {
-		return errors.New("not *net.TCPConn")
-	}
-	rawConn, err := tcpConn.SyscallConn()
+	rawConn, err := getRawConn(conn)
 	if err != nil {
 		return fmt.Errorf("get rawConn: %v", err)
 	}
@@ -251,6 +256,43 @@ func desyncSend(
 	}
 	if _, err = conn.Write(firstPacket[dataLen:]); err != nil {
 		return fmt.Errorf("send remaining data: %v", err)
+	}
+
+	return nil
+}
+
+
+func sendOOB(conn net.Conn, data []byte) error {
+	// 获取底层 socket 句柄
+	rawConn, err := conn.(interface{ SyscallConn() (syscall.RawConn, error) }).SyscallConn()
+	if err != nil {
+		return fmt.Errorf("failed to get raw connection: %v", err)
+	}
+
+	var sock windows.Handle
+	err = rawConn.Control(func(fd uintptr) {
+		sock = windows.Handle(fd)
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get socket handle: %v", err)
+	}
+
+	// 构造 WSABUF
+	wsabuf := windows.WSABuf{
+		Len: uint32(len(data)),
+		Buf: (*byte)(unsafe.Pointer(&data[0])),
+	}
+
+	var bytesSent uint32
+	// 调用 WSASend，flags = MSG_OOB
+	// 注意：这里传入 overlapped = nil 表示同步（阻塞）调用
+	err = windows.WSASend(sock, &wsabuf, 1, &bytesSent, windows.MSG_OOB, nil, nil)
+	if err != nil {
+		return fmt.Errorf("WSASend failed: %v", err)
+	}
+
+	if bytesSent != uint32(len(data)) {
+		return fmt.Errorf("only %d of %d bytes sent", bytesSent, len(data))
 	}
 
 	return nil

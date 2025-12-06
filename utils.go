@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"syscall"
 
 	"github.com/miekg/dns"
 )
@@ -289,4 +290,12 @@ func doubleQuery(domain string, first, second uint16) (ip string, err1, err2 err
 		ip, err2 = dnsQuery(domain, second)
 	}
 	return
+}
+
+func getRawConn(conn net.Conn) (syscall.RawConn, error) {
+	tcpConn, ok := conn.(*net.TCPConn)
+	if !ok {
+		return nil, errors.New("not *net.TCPConn")
+	}
+	return tcpConn.SyscallConn()
 }

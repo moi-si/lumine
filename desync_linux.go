@@ -5,11 +5,11 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"syscall"
 	"time"
+	"sync"
 
 	"golang.org/x/sys/unix"
 )
@@ -40,7 +40,13 @@ func tryConnectWithTTL(target string, level, opt, ttl int) (bool, error) {
 	return true, nil
 }
 
-func minReachableTTL(target string, ipv6 bool) (int, error) {
+var ttlCache sync.Map
+
+func minReachableTTL(addr string, ipv6 bool) (int, error) {
+	v, ok := ttlCache.Load(addr)
+	if ok {
+		return v.(int), nil
+	}
 	var level, opt int
 	if ipv6 {
 		level, opt = unix.IPPROTO_IPV6, unix.IPV6_UNICAST_HOPS
@@ -49,9 +55,10 @@ func minReachableTTL(target string, ipv6 bool) (int, error) {
 	}
 	low, high := 1, 32
 	found := -1
+
 	for low <= high {
 		mid := (low + high) / 2
-		ok, err := tryConnectWithTTL(target, level, opt, mid)
+		ok, err := tryConnectWithTTL(addr, level, opt, mid)
 		if err != nil {
 			ok = false
 		}
@@ -62,6 +69,7 @@ func minReachableTTL(target string, ipv6 bool) (int, error) {
 			low = mid + 1
 		}
 	}
+	ttlCache.Store(addr, found)
 	return found, nil
 }
 
@@ -131,11 +139,7 @@ func desyncSend(
 	conn net.Conn, ipv6 bool,
 	firstPacket, fakeData []byte, sniPos, sniLen, fakeTTL int, fakeSleep float64,
 ) error {
-	tcpConn, ok := conn.(*net.TCPConn)
-	if !ok {
-		return errors.New("not *net.TCPConn")
-	}
-	rawConn, err := tcpConn.SyscallConn()
+	rawConn, err := getRawConn(conn)
 	if err != nil {
 		return fmt.Errorf("get rawConn: %v", err)
 	}
