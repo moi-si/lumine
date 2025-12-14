@@ -5,11 +5,11 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"syscall"
 	"time"
+	"sync"
 
 	"golang.org/x/sys/unix"
 )
@@ -40,7 +40,13 @@ func tryConnectWithTTL(target string, level, opt, ttl int) (bool, error) {
 	return true, nil
 }
 
-func minReachableTTL(target string, ipv6 bool) (int, error) {
+var ttlCache sync.Map
+
+func minReachableTTL(addr string, ipv6 bool) (int, error) {
+	v, ok := ttlCache.Load(addr)
+	if ok {
+		return v.(int), nil
+	}
 	var level, opt int
 	if ipv6 {
 		level, opt = unix.IPPROTO_IPV6, unix.IPV6_UNICAST_HOPS
@@ -49,9 +55,10 @@ func minReachableTTL(target string, ipv6 bool) (int, error) {
 	}
 	low, high := 1, 32
 	found := -1
+
 	for low <= high {
 		mid := (low + high) / 2
-		ok, err := tryConnectWithTTL(target, level, opt, mid)
+		ok, err := tryConnectWithTTL(addr, level, opt, mid)
 		if err != nil {
 			ok = false
 		}
@@ -62,6 +69,7 @@ func minReachableTTL(target string, ipv6 bool) (int, error) {
 			low = mid + 1
 		}
 	}
+	ttlCache.Store(addr, found)
 	return found, nil
 }
 
@@ -131,11 +139,7 @@ func desyncSend(
 	conn net.Conn, ipv6 bool,
 	firstPacket, fakeData []byte, sniPos, sniLen, fakeTTL int, fakeSleep float64,
 ) error {
-	tcpConn, ok := conn.(*net.TCPConn)
-	if !ok {
-		return errors.New("not *net.TCPConn")
-	}
-	rawConn, err := tcpConn.SyscallConn()
+	rawConn, err := getRawConn(conn)
 	if err != nil {
 		return fmt.Errorf("get rawConn: %v", err)
 	}
@@ -198,6 +202,30 @@ func desyncSend(
 	}
 	if _, err = conn.Write(firstPacket[dataLen:]); err != nil {
 		return fmt.Errorf("send remaining data: %s", err)
+	}
+	return nil
+}
+
+func sendOOB(conn net.Conn, data []byte) error {
+	if len(data) == 0 {
+		return nil
+	}
+	rawConn, err := getRawConn(conn)
+	if err != nil {
+		return fmt.Errorf("get raw conn: %w", err)
+	}
+
+	var fd uintptr
+	if ctrlErr := rawConn.Control(func(f uintptr) {
+		fd = f
+	}); ctrlErr != nil {
+		return fmt.Errorf("control: %w", ctrlErr)
+	}
+	if fd == 0 {
+		return fmt.Errorf("invalid socket descriptor")
+	}
+	if err = unix.Sendto(int(fd), data, unix.MSG_OOB, nil); err != nil {
+		return fmt.Errorf("unix.Sendto (MSG_OOB): %w", err)
 	}
 	return nil
 }

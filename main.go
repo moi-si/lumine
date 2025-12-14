@@ -477,7 +477,9 @@ func handleClient(clientConn net.Conn, id uint32) {
 				}
 				logger.Println("Sent ClientHello directly")
 			case "tls-rf":
-				err = sendRecords(dstConn, record, sniPos, sniLen, policy.NumRecords, policy.NumSegments, policy.SendDelay)
+				err = sendRecords(dstConn, record, sniPos, sniLen,
+					policy.NumRecords, policy.NumSegments,
+					policy.OOB != nil && *policy.OOB, policy.SendDelay)
 				if err != nil {
 					logger.Println("TLS fragmentation fail:", err)
 					return

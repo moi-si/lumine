@@ -25,6 +25,7 @@ type Policy struct {
 	Mode        string   `json:"mode"`
 	NumRecords  int      `json:"num_records"`
 	NumSegments int      `json:"num_segs"`
+	OOB         *bool    `json:"oob"`
 	SendDelay   *float64 `json:"send_delay"`
 	FakeTTL     int      `json:"fake_ttl"`
 	FakeSleep   float64  `json:"fake_sleep"`
@@ -63,10 +64,13 @@ func (p Policy) String() string {
 		}
 		if p.NumSegments != 1 {
 			if p.SendDelay == nil || *p.SendDelay <= 0 {
-				fields = append(fields, "no_interval")
+				fields = append(fields, "no_delay")
 			} else {
-				fields = append(fields, fmt.Sprintf("%.1f-second interval", *p.SendDelay))
+				fields = append(fields, fmt.Sprintf("%.1f-second delay", *p.SendDelay))
 			}
+		}
+		if p.OOB != nil && *p.OOB {
+			fields = append(fields, "oob")
 		}
 	case "ttl-d":
 		if p.FakeTTL == 0 {
@@ -111,6 +115,9 @@ func mergePolicies(policies ...Policy) *Policy {
 		}
 		if p.NumSegments != 0 {
 			merged.NumSegments = p.NumSegments
+		}
+		if p.OOB != nil {
+			merged.OOB = p.OOB
 		}
 		if p.SendDelay != nil {
 			merged.SendDelay = p.SendDelay

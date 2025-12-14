@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -17,7 +18,13 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+var ttlCache sync.Map
+
 func minReachableTTL(addr string, ipv6 bool) (int, error) {
+	v, ok := ttlCache.Load(addr)
+	if ok {
+		return v.(int), nil
+	}
 	var level, opt int
 	if ipv6 {
 		level, opt = windows.IPPROTO_IPV6, windows.IPV6_UNICAST_HOPS
@@ -40,6 +47,7 @@ func minReachableTTL(addr string, ipv6 bool) (int, error) {
 			low = mid + 1
 		}
 	}
+	ttlCache.Store(addr, found)
 	return found, nil
 }
 
@@ -182,11 +190,7 @@ func desyncSend(
 	conn net.Conn, ipv6 bool,
 	firstPacket, fakeData []byte, sniPos, sniLen, fakeTTL int, fakeSleep float64,
 ) error {
-	tcpConn, ok := conn.(*net.TCPConn)
-	if !ok {
-		return errors.New("not *net.TCPConn")
-	}
-	rawConn, err := tcpConn.SyscallConn()
+	rawConn, err := getRawConn(conn)
 	if err != nil {
 		return fmt.Errorf("get rawConn: %v", err)
 	}
@@ -253,5 +257,51 @@ func desyncSend(
 		return fmt.Errorf("send remaining data: %v", err)
 	}
 
+	return nil
+}
+
+func sendOOB(conn net.Conn, data []byte) error {
+	if len(data) == 0 {
+		return nil // nothing to send
+	}
+
+	rawConn, err := getRawConn(conn)
+	if err != nil {
+		return fmt.Errorf("get raw conn: %w", err)
+	}
+
+	var sock windows.Handle
+	controlErr := rawConn.Control(func(fd uintptr) {
+		sock = windows.Handle(fd)
+	})
+	if controlErr != nil {
+		return fmt.Errorf("control: %w", controlErr)
+	}
+	if sock == 0 {
+		return fmt.Errorf("invalid socket handle")
+	}
+
+	var wsabuf windows.WSABuf
+	wsabuf.Len = uint32(len(data))
+	wsabuf.Buf = &data[0]
+
+	var bytesSent uint32
+	const dwFlags = windows.MSG_OOB
+
+	err = windows.WSASend(
+		sock,
+		&wsabuf,
+		1,          // dwBufferCount
+		&bytesSent, // lpNumberOfBytesSent
+		dwFlags,    // dwFlags (MSG_OOB)
+		nil,        // lpOverlapped
+		nil,        // lpCompletionRoutine
+	)
+	if err != nil {
+		return fmt.Errorf("WSASend: %w", err)
+	}
+	if bytesSent != wsabuf.Len {
+		return fmt.Errorf("WSASend: only %d of %d bytes sent", bytesSent, wsabuf.Len)
+	}
 	return nil
 }

@@ -13,7 +13,8 @@
         "tls13_only": true,
         "num_records": 10,
         "num_segs": 3,
-        "send_interval": 0.1,
+        "oob": true,
+        "send_delay": 0.1,
         "fake_ttl": 0,
         "fake_sleep": 0.2
     },
@@ -109,9 +110,6 @@
         },
         "zws5(|-1).web.telegram.org": {
             "host": "149.154.170.200"
-        },
-        "*(x|twitter).com": {
-            "host": "104.18.38.25"
         },
         "platform.twitter.com": {
             "host": "146.75.120.157"
