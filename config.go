@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -133,20 +134,22 @@ func mergePolicies(policies ...Policy) *Policy {
 }
 
 type Config struct {
-	ServerAddr     string            `json:"server_address"`
-	DNSAddr        string            `json:"udp_dns_addr"`
-	UDPSize        uint16            `json:"udp_minsize"`
-	MaxJump        uint8             `json:"max_jump"`
-	FakePacket     string            `json:"fake_packet"`
-	FakeTTLRules   string            `json:"fake_ttl_rules"`
-	DefaultPolicy  Policy            `json:"default_policy"`
-	DomainPolicies map[string]Policy `json:"domain_policies"`
-	IpPolicies     map[string]Policy `json:"ip_policies"`
+	TransmitFileLimit int               `json:"transmit_file_limit"`
+	ServerAddr        string            `json:"server_address"`
+	DNSAddr           string            `json:"udp_dns_addr"`
+	UDPSize           uint16            `json:"udp_minsize"`
+	MaxJump           uint8             `json:"max_jump"`
+	FakePacket        string            `json:"fake_packet"`
+	FakeTTLRules      string            `json:"fake_ttl_rules"`
+	DefaultPolicy     Policy            `json:"default_policy"`
+	DomainPolicies    map[string]Policy `json:"domain_policies"`
+	IpPolicies        map[string]Policy `json:"ip_policies"`
 }
 
 var (
 	defaultPolicy Policy
 	fakePacket    []byte
+	sem           chan struct{}
 	dnsAddr       string
 	maxJump       uint8
 	calcTTL       func(int) (int, error)
@@ -165,10 +168,7 @@ func parseRules(conf string) ([]rule, error) {
 	if len(conf) == 0 {
 		return nil, errors.New("empty config")
 	}
-	if conf[0] != 'q' {
-		return nil, nil
-	}
-	b := []byte(conf[1:])
+	b := []byte(conf)
 
 	var rules []rule
 	i := 0
@@ -284,6 +284,9 @@ func loadConfig(filePath string) (string, error) {
 		var encoder = charmap.ISO8859_1.NewEncoder()
 		if fakePacket, err = encoder.Bytes([]byte(conf.FakePacket)); err != nil {
 			return "", fmt.Errorf("fake packet encoding failed: %v", err)
+		}
+		if runtime.GOOS == "windows" && conf.TransmitFileLimit > 0 {
+			sem = make(chan struct{}, conf.TransmitFileLimit)
 		}
 	}
 	if conf.FakeTTLRules != "" {

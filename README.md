@@ -15,8 +15,9 @@ Field|Description|Example|Special Values
 `udp_dns_server`|UDP DNS server address for resolution|`"127.0.0.1:8053"`|-
 `udp_minsize`|Minimum UDP packet size for DNS queries|`4096`|`0` uses default DNS client size (may cause error)
 `max_jump`|Maximum redirect chain length for IP mapping|`30`|`0` defaults to 20
-`fake_ttl_rules`|TTL calculation rules for fake packets|`"q0-1;3=3;5-1;8-2;13-3;20=18"`|Empty string disables TTL rules
+`fake_ttl_rules`|TTL calculation rules for fake packets|`"0-1;3=3;5-1;8-2;13-3;20=18"`|Empty string disables TTL rules
 `fake_packet`|The packet (usually a plaintext HTTP request) that will be sent along with real packet, required by `ttl-d` mode|`"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n"`|-
+`transmit_file_limit`|Maximum concurrent TransmitFile operations|`2`|`0` or negative means no limit (unrestricted concurrency)
 `default_policy`|Default policy applied to all connections|See Policy fields below|-
 `domain_policy`|Domain-specific policies|See Policy fields below|-
 `ip_policy`|IP/CIDR-specific policies|See Policy fields below|-
@@ -35,7 +36,7 @@ Field|Description|Example|Special Values
 `num_records`|Number of TLS records for fragmentation|`10`|`1` disables fragmentation
 `num_segs`|Number of segments for TCP fragmentation|`3`|`1` disables segment splitting; when `-1`, send 1 record each time
 `oob`|Attach Out-Of-Band (OOB) data to the end of the first TCP segment|`true`|-
-`send_delay`|Delay between sending segments (seconds)|`0.3`|`0` or negative means no interval
+`send_delay`|Delay between sending segments (seconds)|`0.3`|`0` or negative means no delay
 `fake_ttl`|TTL value for fake packets in `ttl-d` mode|`17`|`0` enables auto TTL detection
 `fake_sleep`|Sleep time after sending fake packet (seconds)|`0.2`|-
 ### Mode  Values

@@ -142,6 +142,10 @@ func sendFakeData(
 	if err != nil {
 		return fmt.Errorf("set file pointer: %v", err)
 	}
+	if sem != nil {
+		sem <- struct{}{}
+		defer func() { <-sem }()
+	}
 	windows.TransmitFile(
 		sockHandle,
 		fileHandle,
@@ -181,7 +185,7 @@ func sendFakeData(
 		return fmt.Errorf("TransmitFile call failed on waiting for event: %v", err)
 	}
 	if val != 0 {
-		return errors.New("TransmitFile call fialed")
+		return errors.New("TransmitFile call failed")
 	}
 	return nil
 }

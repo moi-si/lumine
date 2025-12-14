@@ -51,11 +51,11 @@ func sendRecords(conn net.Conn, data []byte, offset, length,
 		for i, chunk := range chunks {
 			_, err := conn.Write(chunk)
 			if err != nil {
-				return fmt.Errorf("record %d write error: %w", i+1, err)
+				return fmt.Errorf("write record %d: %s", i+1, err)
 			}
 			if oob && i == 0 {
 				if err := sendOOB(conn, []byte("&")); err != nil {
-					return fmt.Errorf("OOB: %s", err)
+					return fmt.Errorf("oob: %s", err)
 				}
 			}
 			if itv {
@@ -88,11 +88,11 @@ func sendRecords(conn net.Conn, data []byte, offset, length,
 			end = len(merged)
 		}
 		if _, err := conn.Write(merged[start:end]); err != nil {
-			return fmt.Errorf("segment %d write error: %w", i+1, err)
+			return fmt.Errorf("write segment %d: %s", i+1, err)
 		}
 		if oob && i == 0 {
 			if err := sendOOB(conn, []byte("&")); err != nil {
-				return fmt.Errorf("OOB: %s", err)
+				return fmt.Errorf("oob: %s", err)
 			}
 		}
 		if itv {
