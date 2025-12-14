@@ -348,7 +348,9 @@ func handleClient(clientConn net.Conn, id uint32) {
 					logger.Println("IP redirect error:", err)
 					return
 				}
-				policy = mergePolicies(defaultPolicy, *ipPolicy, *policy)
+				if ipPolicy != nil {
+					policy = mergePolicies(defaultPolicy, *ipPolicy, *policy)
+				}
 			}
 		}
 		if policy.HttpStatus == 0 {
