@@ -34,6 +34,7 @@ Field|Description|Example|Special Values
 `mode`|Traffic manipulation mode|`"tls-rf"`|See Mode Values below
 `num_records`|Number of TLS records for fragmentation|`10`|`1` disables fragmentation
 `num_segs`|Number of segments for TCP fragmentation|`3`|`1` disables segment splitting; when `-1`, send 1 record each time
+`oob`|Attach Out-Of-Band (OOB) data to the end of the first TCP segment|`true`|-
 `send_delay`|Delay between sending segments (seconds)|`0.3`|`0` or negative means no interval
 `fake_ttl`|TTL value for fake packets in `ttl-d` mode|`17`|`0` enables auto TTL detection
 `fake_sleep`|Sleep time after sending fake packet (seconds)|`0.2`|-
