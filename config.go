@@ -33,7 +33,7 @@ type Policy struct {
 }
 
 func (p Policy) String() string {
-	fields := make([]string, 0, 9)
+	fields := make([]string, 0, 10)
 	var addr string
 	if p.Host != nil && *p.Host != "" {
 		addr += *p.Host
@@ -64,9 +64,7 @@ func (p Policy) String() string {
 			fields = append(fields, fmt.Sprintf("%d segments", p.NumSegments))
 		}
 		if p.NumSegments != 1 {
-			if p.SendDelay == nil || *p.SendDelay <= 0 {
-				fields = append(fields, "no_delay")
-			} else {
+			if p.SendDelay != nil && *p.SendDelay > 0 {
 				fields = append(fields, fmt.Sprintf("%.1f-second delay", *p.SendDelay))
 			}
 		}

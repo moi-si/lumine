@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"math/rand"
 	"net"
 	"time"
 )
@@ -25,8 +24,7 @@ func sendRecords(conn net.Conn, data []byte, offset, length,
 		return errors.New("invalid length")
 	}
 
-	header := make([]byte, 3)
-	copy(header, data[:3])
+	header := data[:3]
 	payload := data[5:]
 	offset -= 5
 
@@ -37,7 +35,7 @@ func sendRecords(conn net.Conn, data []byte, offset, length,
 		return errors.New("slice out of payload bounds")
 	}
 
-	cut := offset + 1 + rand.Intn(length-1)
+	cut := offset + 1 + 2
 
 	rightChunks := numRcd / 2
 	leftChunks := numRcd - rightChunks
