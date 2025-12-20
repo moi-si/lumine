@@ -277,11 +277,7 @@ func desyncSend(
 	return nil
 }
 
-func sendOOB(conn net.Conn, data []byte) error {
-	if len(data) == 0 {
-		return nil // nothing to send
-	}
-
+func sendOOB(conn net.Conn) error {
 	rawConn, err := getRawConn(conn)
 	if err != nil {
 		return fmt.Errorf("get raw conn: %w", err)
@@ -298,21 +294,22 @@ func sendOOB(conn net.Conn, data []byte) error {
 		return fmt.Errorf("invalid socket handle")
 	}
 
-	var wsabuf windows.WSABuf
-	wsabuf.Len = uint32(len(data))
-	wsabuf.Buf = &data[0]
-
-	var bytesSent uint32
-	const dwFlags = windows.MSG_OOB
+	var (
+		wsabuf    windows.WSABuf
+		data      byte = '&'
+		bytesSent uint32
+	)
+	wsabuf.Len = 1
+	wsabuf.Buf = &data
 
 	err = windows.WSASend(
 		sock,
 		&wsabuf,
-		1,          // dwBufferCount
-		&bytesSent, // lpNumberOfBytesSent
-		dwFlags,    // dwFlags (MSG_OOB)
-		nil,        // lpOverlapped
-		nil,        // lpCompletionRoutine
+		1,               // dwBufferCount
+		&bytesSent,      // lpNumberOfBytesSent
+		windows.MSG_OOB, // dwFlags (MSG_OOB)
+		nil,             // lpOverlapped
+		nil,             // lpCompletionRoutine
 	)
 	if err != nil {
 		return fmt.Errorf("WSASend: %w", err)

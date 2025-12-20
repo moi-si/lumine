@@ -52,7 +52,7 @@ func sendRecords(conn net.Conn, data []byte, offset, length,
 				return fmt.Errorf("write record %d: %s", i+1, err)
 			}
 			if oob && i == 0 {
-				if err := sendOOB(conn, []byte("&")); err != nil {
+				if err := sendOOB(conn); err != nil {
 					return fmt.Errorf("oob: %s", err)
 				}
 			}
@@ -89,7 +89,7 @@ func sendRecords(conn net.Conn, data []byte, offset, length,
 			return fmt.Errorf("write segment %d: %s", i+1, err)
 		}
 		if oob && i == 0 {
-			if err := sendOOB(conn, []byte("&")); err != nil {
+			if err := sendOOB(conn); err != nil {
 				return fmt.Errorf("oob: %s", err)
 			}
 		}

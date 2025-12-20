@@ -220,10 +220,7 @@ func desyncSend(
 	return nil
 }
 
-func sendOOB(conn net.Conn, data []byte) error {
-	if len(data) == 0 {
-		return nil
-	}
+func sendOOB(conn net.Conn) error {
 	rawConn, err := getRawConn(conn)
 	if err != nil {
 		return fmt.Errorf("get raw conn: %w", err)
@@ -238,7 +235,7 @@ func sendOOB(conn net.Conn, data []byte) error {
 	if fd == 0 {
 		return fmt.Errorf("invalid socket descriptor")
 	}
-	if err = unix.Sendto(int(fd), data, unix.MSG_OOB, nil); err != nil {
+	if err = unix.Sendto(int(fd), []byte{'&'}, unix.MSG_OOB, nil); err != nil {
 		return fmt.Errorf("unix.Sendto (MSG_OOB): %w", err)
 	}
 	return nil
