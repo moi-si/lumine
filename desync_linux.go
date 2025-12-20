@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 	"sync"
+	"errors"
 
 	"golang.org/x/sys/unix"
 )
@@ -141,7 +142,7 @@ func desyncSend(
 ) error {
 	rawConn, err := getRawConn(conn)
 	if err != nil {
-		return fmt.Errorf("get rawConn: %v", err)
+		return fmt.Errorf("get rawConn: %s", err)
 	}
 	var fd int
 	err = rawConn.Control(func(fileDesc uintptr) {
@@ -172,36 +173,49 @@ func desyncSend(
 		return fmt.Errorf("get default ttl: %s", err)
 	}
 
-	dataLen := len(fakeData)
+	fakeLen := len(fakeData)
+	if len(firstPacket) < fakeLen {
+		fakeData = []byte("GET / HTTP/1.1\r\nHost: example.com\r\n\r\n")
+		fakeLen = len(fakeData)
+		if len(firstPacket) < fakeLen {
+			return errors.New("first packet too short")
+		}
+	}
 	if fakeSleep < 0.1 {
 		fakeSleep = 0.1
 	}
 	err = sendFakeData(fd, rawConn.Control,
-		fakeData, firstPacket[:dataLen],
+		fakeData, firstPacket[:fakeLen],
 		fakeTTL, defaultTTL, level, opt, fakeSleep)
 	if err != nil {
 		return fmt.Errorf("send fake data: %s", err)
 	}
-	firstPacket = firstPacket[dataLen:]
-	offset := sniLen/2 + sniPos - dataLen
+	firstPacket = firstPacket[fakeLen:]
+	offset := sniLen/2 + sniPos - fakeLen
 	if offset <= 0 {
 		if _, err = conn.Write(firstPacket); err != nil {
-			return fmt.Errorf("send remaining data: %v", err)
+			return fmt.Errorf("send remaining data: %s", err)
 		}
 		return nil
 	}
 	if _, err = conn.Write(firstPacket[:offset]); err != nil {
-		return fmt.Errorf("send data after first faking: %v", err)
+		return fmt.Errorf("send data after first faking: %s", err)
 	}
 	firstPacket = firstPacket[offset:]
+	if len(firstPacket) < fakeLen {
+		if _, err = conn.Write(firstPacket); err != nil {
+			return fmt.Errorf("send remaining data: %s", err)
+		}
+		return nil
+	}
 	err = sendFakeData(fd, rawConn.Control,
-		fakeData, firstPacket[:dataLen],
+		fakeData, firstPacket[:fakeLen],
 		fakeTTL, defaultTTL, level, opt, fakeSleep)
 	if err != nil {
 		return fmt.Errorf("send fake data (2): %s", err)
 	}
-	if _, err = conn.Write(firstPacket[dataLen:]); err != nil {
-		return fmt.Errorf("send remaining data: %s", err)
+	if _, err = conn.Write(firstPacket[fakeLen:]); err != nil {
+		return fmt.Errorf("send remaining data (2): %s", err)
 	}
 	return nil
 }
