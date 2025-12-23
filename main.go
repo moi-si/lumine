@@ -517,7 +517,7 @@ func handleClient(clientConn net.Conn, id uint32) {
 					ttl = policy.FakeTTL
 				}
 				err = desyncSend(
-					dstConn, ipv6, record, fakePacket,
+					dstConn, ipv6, record,
 					sniPos, sniLen, ttl, policy.FakeSleep,
 				)
 				if err != nil {

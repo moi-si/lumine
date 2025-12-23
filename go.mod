@@ -9,7 +9,6 @@ require github.com/google/uuid v1.6.0
 require (
 	github.com/miekg/dns v1.1.68
 	github.com/moi-si/addrtrie v0.1.2
-	golang.org/x/text v0.28.0
 )
 
 require (

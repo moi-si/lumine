@@ -47,8 +47,7 @@ func sendRecords(conn net.Conn, data []byte, offset, length,
 	if numSeg == -1 {
 		itv := interval != nil && *interval > 0
 		for i, chunk := range chunks {
-			_, err := conn.Write(chunk)
-			if err != nil {
+			if _, err := conn.Write(chunk); err != nil {
 				return fmt.Errorf("write record %d: %s", i+1, err)
 			}
 			if oob && i == 0 {

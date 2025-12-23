@@ -7,10 +7,9 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"sync"
 	"syscall"
 	"time"
-	"sync"
-	"errors"
 
 	"golang.org/x/sys/unix"
 )
@@ -75,7 +74,7 @@ func minReachableTTL(addr string, ipv6 bool) (int, error) {
 }
 
 func sendFakeData(
-	fd int, control func(func(fd uintptr)) error,
+	fd int,
 	fakeData, realData []byte,
 	fakeTTL, defaultTTL, level, opt int,
 	fakeSleep float64,
@@ -100,15 +99,9 @@ func sendFakeData(
 	defer unix.Munmap(data)
 	copy(data, fakeData)
 
-	var setErr error
-	err = control(func(fd uintptr) {
-		setErr = unix.SetsockoptInt(int(fd), level, opt, fakeTTL)
-	})
+	err = unix.SetsockoptInt(int(fd), level, opt, fakeTTL)
 	if err != nil {
-		return fmt.Errorf("control: %s", err)
-	}
-	if setErr != nil {
-		return fmt.Errorf("set ttl: %s", err)
+		return fmt.Errorf("set fake ttl: %s", err)
 	}
 	iov := unix.Iovec{
 		Base: &data[0],
@@ -127,18 +120,16 @@ func sendFakeData(
 
 	copy(data, realData)
 
-	err = control(func(fd uintptr) {
-		setErr = unix.SetsockoptInt(int(fd), level, opt, defaultTTL)
-	})
+	err = unix.SetsockoptInt(int(fd), level, opt, defaultTTL)
 	if err != nil {
-		return fmt.Errorf("control: %s", err)
+		return fmt.Errorf("set default ttl: %s", err)
 	}
 	return nil
 }
 
 func desyncSend(
 	conn net.Conn, ipv6 bool,
-	firstPacket, fakeData []byte, sniPos, sniLen, fakeTTL int, fakeSleep float64,
+	firstPacket []byte, sniPos, sniLen, fakeTTL int, fakeSleep float64,
 ) error {
 	rawConn, err := getRawConn(conn)
 	if err != nil {
@@ -173,49 +164,33 @@ func desyncSend(
 		return fmt.Errorf("get default ttl: %s", err)
 	}
 
-	fakeLen := len(fakeData)
-	if len(firstPacket) < fakeLen {
-		fakeData = []byte("GET / HTTP/1.1\r\nHost: example.com\r\n\r\n")
-		fakeLen = len(fakeData)
-		if len(firstPacket) < fakeLen {
-			return errors.New("first packet too short")
-		}
-	}
 	if fakeSleep < 0.1 {
 		fakeSleep = 0.1
 	}
-	err = sendFakeData(fd, rawConn.Control,
-		fakeData, firstPacket[:fakeLen],
-		fakeTTL, defaultTTL, level, opt, fakeSleep)
+	cut := sniLen/2 + sniPos
+	err = sendFakeData(
+		fd,
+		make([]byte, cut),
+		firstPacket[:cut],
+		fakeTTL,
+		defaultTTL,
+		level, opt,
+		fakeSleep,
+	)
 	if err != nil {
-		return fmt.Errorf("send fake data: %s", err)
+		return fmt.Errorf("first sending: %s", err)
 	}
-	firstPacket = firstPacket[fakeLen:]
-	offset := sniLen/2 + sniPos - fakeLen
-	if offset <= 0 {
-		if _, err = conn.Write(firstPacket); err != nil {
-			return fmt.Errorf("send remaining data: %s", err)
-		}
-		return nil
-	}
-	if _, err = conn.Write(firstPacket[:offset]); err != nil {
-		return fmt.Errorf("send data after first faking: %s", err)
-	}
-	firstPacket = firstPacket[offset:]
-	if len(firstPacket) < fakeLen {
-		if _, err = conn.Write(firstPacket); err != nil {
-			return fmt.Errorf("send remaining data: %s", err)
-		}
-		return nil
-	}
-	err = sendFakeData(fd, rawConn.Control,
-		fakeData, firstPacket[:fakeLen],
-		fakeTTL, defaultTTL, level, opt, fakeSleep)
+	err = sendFakeData(
+		fd,
+		make([]byte, len(firstPacket)-cut),
+		firstPacket[cut:],
+		fakeTTL,
+		defaultTTL,
+		level, opt,
+		fakeSleep,
+	)
 	if err != nil {
-		return fmt.Errorf("send fake data (2): %s", err)
-	}
-	if _, err = conn.Write(firstPacket[fakeLen:]); err != nil {
-		return fmt.Errorf("send remaining data (2): %s", err)
+		return fmt.Errorf("second sending: %s", err)
 	}
 	return nil
 }

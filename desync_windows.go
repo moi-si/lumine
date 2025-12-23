@@ -192,18 +192,18 @@ func sendFakeData(
 
 func desyncSend(
 	conn net.Conn, ipv6 bool,
-	firstPacket, fakeData []byte, sniPos, sniLen, fakeTTL int, fakeSleep float64,
+	firstPacket []byte, sniPos, sniLen, fakeTTL int, fakeSleep float64,
 ) error {
 	rawConn, err := getRawConn(conn)
 	if err != nil {
-		return fmt.Errorf("get rawConn: %v", err)
+		return fmt.Errorf("get rawConn: %s", err)
 	}
 	var sockHandle windows.Handle
 	controlErr := rawConn.Control(func(fd uintptr) {
 		sockHandle = windows.Handle(fd)
 	})
 	if controlErr != nil {
-		return fmt.Errorf("control: %v", err)
+		return fmt.Errorf("control: %s", err)
 	}
 
 	var level, opt int
@@ -216,71 +216,47 @@ func desyncSend(
 	}
 	defaultTTL, err := windows.GetsockoptInt(sockHandle, level, opt)
 	if err != nil {
-		return fmt.Errorf("get default TTL: %v", err)
-	}
-	fakeLen := len(fakeData)
-	if len(firstPacket) < fakeLen {
-		fakeData = []byte("GET / HTTP/1.1\r\nHost: example.com\r\n\r\n")
-		fakeLen = len(fakeData)
-		if len(firstPacket) < fakeLen {
-			return errors.New("first packet too short")
-		}
-	}
-	err = sendFakeData(
-		sockHandle,
-		fakeData,
-		firstPacket[:fakeLen],
-		fakeLen,
-		fakeTTL,
-		defaultTTL,
-		level, opt,
-		fakeSleep,
-	)
-	if err != nil {
-		return fmt.Errorf("send first fake data: %v", err)
-	}
-	firstPacket = firstPacket[fakeLen:]
-	offset := sniLen/2 + sniPos - fakeLen
-	if offset <= 0 {
-		if _, err = conn.Write(firstPacket); err != nil {
-			return fmt.Errorf("send data after first fake packet: %v", err)
-		}
-		return nil
-	}
-	if _, err = conn.Write(firstPacket[:offset]); err != nil {
-		return fmt.Errorf("send data after first fake packet: %v", err)
-	}
-	firstPacket = firstPacket[offset:]
-	if len(firstPacket) < fakeLen {
-		if _, err = conn.Write(firstPacket); err != nil {
-			return fmt.Errorf("send remaining data: %s", err)
-		}
-		return nil
-	}
-	err = sendFakeData(
-		sockHandle,
-		fakeData,
-		firstPacket[:fakeLen],
-		fakeLen,
-		fakeTTL,
-		defaultTTL,
-		level, opt,
-		fakeSleep,
-	)
-	if err != nil {
-		return fmt.Errorf("send second fake data: %v", err)
-	}
-	if _, err = conn.Write(firstPacket[fakeLen:]); err != nil {
-		return fmt.Errorf("send remaining data: %v", err)
+		return fmt.Errorf("get default TTL: %s", err)
 	}
 
+	if fakeSleep < 0.1 {
+		fakeSleep = 0.1
+	}
+
+	cut := sniLen/2 + sniPos
+	err = sendFakeData(
+		sockHandle,
+		make([]byte, cut),
+		firstPacket[:cut],
+		cut,
+		fakeTTL,
+		defaultTTL,
+		level, opt,
+		fakeSleep,
+	)
+	if err != nil {
+		return fmt.Errorf("first sending: %s", err)
+	}
+	err = sendFakeData(
+		sockHandle,
+		make([]byte, len(firstPacket)-cut),
+		firstPacket[cut:],
+		len(firstPacket)-cut,
+		fakeTTL,
+		defaultTTL,
+		level, opt,
+		fakeSleep,
+	)
+	if err != nil {
+		return fmt.Errorf("second sending: %s", err)
+	}
 	return nil
 }
 
 func sendOOB(conn net.Conn) error {
 	rawConn, err := getRawConn(conn)
 	if err != nil {
-		return fmt.Errorf("get raw conn: %w", err)
+		return fmt.Errorf("get raw conn: %s", err)
 	}
 
 	var sock windows.Handle
@@ -288,7 +264,7 @@ func sendOOB(conn net.Conn) error {
 		sock = windows.Handle(fd)
 	})
 	if controlErr != nil {
-		return fmt.Errorf("control: %w", controlErr)
+		return fmt.Errorf("control: %s", controlErr)
 	}
 	if sock == 0 {
 		return fmt.Errorf("invalid socket handle")
@@ -312,7 +288,7 @@ func sendOOB(conn net.Conn) error {
 		nil,             // lpCompletionRoutine
 	)
 	if err != nil {
-		return fmt.Errorf("WSASend: %w", err)
+		return fmt.Errorf("WSASend: %s", err)
 	}
 	if bytesSent != wsabuf.Len {
 		return fmt.Errorf("WSASend: only %d of %d bytes sent", bytesSent, wsabuf.Len)

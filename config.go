@@ -11,7 +11,6 @@ import (
 
 	"github.com/miekg/dns"
 	"github.com/moi-si/addrtrie"
-	"golang.org/x/text/encoding/charmap"
 )
 
 type Policy struct {
@@ -137,7 +136,6 @@ type Config struct {
 	DNSAddr           string            `json:"udp_dns_addr"`
 	UDPSize           uint16            `json:"udp_minsize"`
 	MaxJump           uint8             `json:"max_jump"`
-	FakePacket        string            `json:"fake_packet"`
 	FakeTTLRules      string            `json:"fake_ttl_rules"`
 	DefaultPolicy     Policy            `json:"default_policy"`
 	DomainPolicies    map[string]Policy `json:"domain_policies"`
@@ -146,7 +144,6 @@ type Config struct {
 
 var (
 	defaultPolicy Policy
-	fakePacket    []byte
 	sem           chan struct{}
 	dnsAddr       string
 	maxJump       uint8
@@ -278,17 +275,14 @@ func loadConfig(filePath string) (string, error) {
 	} else {
 		maxJump = conf.MaxJump
 	}
-	if conf.FakePacket != "" {
-		var encoder = charmap.ISO8859_1.NewEncoder()
-		if fakePacket, err = encoder.Bytes([]byte(conf.FakePacket)); err != nil {
-			return "", fmt.Errorf("fake packet encoding failed: %v", err)
+	if conf.FakeTTLRules != "" {
+		err = loadFakeTTLRules(conf.FakeTTLRules)
+		if err != nil {
+			return "", fmt.Errorf("load fake ttl rules: %s", err)
 		}
 		if runtime.GOOS == "windows" && conf.TransmitFileLimit > 0 {
 			sem = make(chan struct{}, conf.TransmitFileLimit)
 		}
-	}
-	if conf.FakeTTLRules != "" {
-		loadFakeTTLRules(conf.FakeTTLRules)
 	}
 
 	domainMatcher = addrtrie.NewDomainMatcher[Policy]()
