@@ -554,10 +554,15 @@ func handleClient(clientConn net.Conn, id uint32) {
 }
 
 func main() {
-	fmt.Println("moi-si/lumine v0.1.1")
+	flag.Usage = func() {
+		fmt.Fprintln(os.Stderr, "moi-si/lumine v0.1.1")
+		fmt.Fprintln(os.Stderr)
+		flag.PrintDefaults()
+	}
 	configPath := flag.String("c", "config.json", "Config file path")
 	addr := flag.String("b", "", "Bind address (default: address from config file)")
 	flag.Parse()
+
 	serverAddr, err := loadConfig(*configPath)
 	if err != nil {
 		fmt.Println("Failed to load config:", err)
