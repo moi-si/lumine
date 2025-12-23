@@ -105,7 +105,7 @@ func sendFakeData(
 	}
 	iov := unix.Iovec{
 		Base: &data[0],
-		Len:  uint64(len(fakeData)),
+		Len:  toUint(len(fakeData)),
 	}
 	if _, err := unix.Vmsplice(pipeW, []unix.Iovec{iov}, unix.SPLICE_F_GIFT); err != nil {
 		return fmt.Errorf("vmsplice: %s", err)
