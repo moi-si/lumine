@@ -180,7 +180,7 @@ func desyncSend(
 	if err != nil {
 		return fmt.Errorf("first sending: %s", err)
 	}
-	err = sendFakeData(
+	/*err = sendFakeData(
 		fd,
 		make([]byte, len(firstPacket)-cut),
 		firstPacket[cut:],
@@ -188,8 +188,8 @@ func desyncSend(
 		defaultTTL,
 		level, opt,
 		fakeSleep,
-	)
-	if err != nil {
+	)*/
+	if _, err = conn.Write(firstPacket[cut:]); err != nil {
 		return fmt.Errorf("second sending: %s", err)
 	}
 	return nil
