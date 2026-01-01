@@ -555,7 +555,7 @@ func handleClient(clientConn net.Conn, id uint32) {
 
 func main() {
 	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "moi-si/lumine v0.1.1")
+		fmt.Fprintln(os.Stderr, "moi-si/lumine v0.1.2")
 		fmt.Fprintln(os.Stderr)
 		flag.PrintDefaults()
 	}
