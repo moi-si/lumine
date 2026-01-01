@@ -1,5 +1,5 @@
 # lumine
-A lightweight local SOCKS5 server written in Golang that protects HTTPS connections.
+A lightweight local SOCKS5 server written in Golang that protects TLS connections over TCP.
 
 ## Installation
 
