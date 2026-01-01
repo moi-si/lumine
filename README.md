@@ -7,11 +7,20 @@ A lightweight local SOCKS5 server written in Golang that protects TLS connection
 go install github.com/moi-si/lumine@latest
 ```
 
+## Build
+
+```
+git clone https://github.com/moi-si/lumine
+cd lumine
+go build
+```
+
 ## Configuration
 ### Top-Level Fields
 Field|Description|Example|Special Values
 -|-|-|-
-`server_address`|Bind address|`"127.0.0.1:1080"`|-
+`server_address`|SOCKS5 bind address|`"127.0.0.1:1080"`|`none` disables SOCKS5 proxy
+`http_address`|HTTP bind address|`":1225"`|`none` disables HTTP proxy
 `udp_dns_server`|UDP DNS server address for resolution|`"127.0.0.1:8053"`|-
 `udp_minsize`|Minimum UDP packet size for DNS queries|`4096`|`0` uses default DNS client size (may cause error)
 `max_jump`|Maximum redirect chain length for IP mapping|`30`|`0` defaults to 20

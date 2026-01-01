@@ -133,6 +133,7 @@ func mergePolicies(policies ...Policy) *Policy {
 type Config struct {
 	TransmitFileLimit int               `json:"transmit_file_limit"`
 	ServerAddr        string            `json:"server_address"`
+	HttpAddr          string            `json:"http_address"`
 	DNSAddr           string            `json:"udp_dns_addr"`
 	UDPSize           uint16            `json:"udp_minsize"`
 	MaxJump           uint8             `json:"max_jump"`
@@ -251,17 +252,17 @@ func loadFakeTTLRules(conf string) error {
 	return nil
 }
 
-func loadConfig(filePath string) (string, error) {
+func loadConfig(filePath string) (string, string, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	defer file.Close()
 
 	decoder := json.NewDecoder(file)
 	var conf Config
 	if err = decoder.Decode(&conf); err != nil {
-		return "", err
+		return "", "", err
 	}
 	defaultPolicy = conf.DefaultPolicy
 	dnsAddr = conf.DNSAddr
@@ -278,7 +279,7 @@ func loadConfig(filePath string) (string, error) {
 	if conf.FakeTTLRules != "" {
 		err = loadFakeTTLRules(conf.FakeTTLRules)
 		if err != nil {
-			return "", fmt.Errorf("load fake ttl rules: %s", err)
+			return "", "", fmt.Errorf("load fake ttl rules: %s", err)
 		}
 		if runtime.GOOS == "windows" && conf.TransmitFileLimit > 0 {
 			sem = make(chan struct{}, conf.TransmitFileLimit)
@@ -310,7 +311,7 @@ func loadConfig(filePath string) (string, error) {
 		}
 	}
 
-	return conf.ServerAddr, nil
+	return conf.ServerAddr, conf.HttpAddr, nil
 }
 
 func matchIP(ip string) *Policy {

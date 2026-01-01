@@ -1,12 +1,13 @@
 {
     "server_address": "127.0.0.1:1080",
+    "http_address": "127.0.0.1:1225",
     "udp_dns_addr": "127.0.0.1:8053",
     "udp_minsize": 4096,
     "max_jump": 30,
     "fake_ttl_rules": "0-1;3=3;5-1;8-2;13-3;20=18",
     "transmit_file_limit": 2,
     "default_policy": {
-        "reply_first": true,
+        "reply_first": false,
         "dns_retry": false,
         "http_status": 0,
         "mode": "tls-rf",
@@ -113,7 +114,7 @@
         "video.pscp.tv": {
             "host": "146.75.34.164"
         },
-        "*(ooni.org|solana.com|vercel.app)": {
+        "*(ooni.org|solana.com|vercel.app|sambanova.ai)": {
             "mode": "ttl-d"
         },
         "onedrive.live.com": {

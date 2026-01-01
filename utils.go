@@ -1,11 +1,16 @@
 package main
 
 import (
+	"bufio"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
+	"log"
 	"math/big"
 	"net"
+	"net/http"
+	"strings"
 	"syscall"
 
 	"github.com/miekg/dns"
@@ -298,4 +303,307 @@ func getRawConn(conn net.Conn) (syscall.RawConn, error) {
 		return nil, errors.New("not *net.TCPConn")
 	}
 	return tcpConn.SyscallConn()
+}
+
+func ipRedirect(logger *log.Logger, ip string) (string, *Policy, error) {
+	for range maxJump {
+		policy := matchIP(ip)
+		if policy == nil {
+			return ip, nil, nil
+		}
+		if policy.MapTo == nil || *policy.MapTo == "" {
+			return ip, policy, nil
+		}
+
+		mapTo := *policy.MapTo
+		var chain bool
+		if mapTo[0] == '^' {
+			mapTo = mapTo[1:]
+		} else {
+			chain = true
+		}
+		if strings.Contains(mapTo, "/") {
+			var err error
+			mapTo, err = transformIP(ip, mapTo)
+			if err != nil {
+				return "", nil, err
+			}
+		}
+		if ip == mapTo {
+			return ip, policy, nil
+		}
+		logger.Printf("Redirect %s to %s", ip, mapTo)
+
+		if chain {
+			ip = mapTo
+			continue
+		}
+		return mapTo, matchIP(mapTo), nil
+	}
+	return "", nil, errors.New("too many redirects")
+}
+
+func handleTunnel(
+	policy *Policy, replyFirst bool, dstConn, clientConn net.Conn, logger *log.Logger,
+	target, originHost string, closeBoth func()) {
+	var err error
+
+	if policy.Mode == "raw" {
+		if replyFirst {
+			dstConn, err = net.Dial("tcp", target)
+			if err != nil {
+				logger.Println("Connection failed:", err)
+				return
+			}
+		}
+		go io.Copy(clientConn, dstConn)
+		io.Copy(dstConn, clientConn)
+		return
+	}
+
+	br := bufio.NewReader(clientConn)
+	peekBytes, err := br.Peek(5)
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			logger.Println("Empty tunnel")
+		} else {
+			logger.Println("Read first packet fail:", err)
+		}
+		return
+	}
+	switch peekBytes[0] {
+	case 'G', 'P', 'D', 'O', 'T', 'H':
+		req, err := http.ReadRequest(br)
+		if err != nil {
+			logger.Println("HTTP request parsing fail:", err)
+			return
+		}
+		defer req.Body.Close()
+
+		host := req.Host
+		if host == "" {
+			host = req.URL.Host
+			if host == "" {
+				logger.Println("Cannot determine target host")
+				return
+			}
+		}
+		logger.Printf("%s %s to %s", req.Method, req.URL, host)
+
+		policy := domainMatcher.Find(host)
+		if policy == nil {
+			policy = &defaultPolicy
+		} else {
+			policy = mergePolicies(defaultPolicy, *policy)
+		}
+		if policy.Host != nil && *policy.Host != "" {
+			if (*policy.Host)[0] != '^' {
+				_, ipPolicy, err := ipRedirect(logger, *policy.Host)
+				if err != nil {
+					logger.Println("IP redirect error:", err)
+					return
+				}
+				if ipPolicy != nil {
+					policy = mergePolicies(defaultPolicy, *ipPolicy, *policy)
+				}
+			}
+		}
+		if policy.HttpStatus == 0 {
+			if replyFirst {
+				dstConn, err = net.Dial("tcp", target)
+				if err != nil {
+					logger.Println("Connection failed:", err)
+					resp := &http.Response{
+						Status:        "502 Bad Gateway",
+						StatusCode:    502,
+						Proto:         req.Proto,
+						ProtoMajor:    1,
+						ProtoMinor:    1,
+						Header:        make(http.Header),
+						ContentLength: 0,
+						Close:         true,
+					}
+					if err = resp.Write(clientConn); err != nil {
+						logger.Println("Send 502 fail:", err)
+					}
+					return
+				}
+			}
+			if err := req.Write(dstConn); err != nil {
+				logger.Println("Forward req fail:", err)
+				return
+			}
+		} else {
+			statusLine := fmt.Sprintf("%d %s", policy.HttpStatus, http.StatusText(policy.HttpStatus))
+			resp := &http.Response{
+				Status:        statusLine,
+				StatusCode:    policy.HttpStatus,
+				Proto:         req.Proto,
+				ProtoMajor:    1,
+				ProtoMinor:    1,
+				Header:        make(http.Header),
+				ContentLength: 0,
+				Close:         true,
+			}
+			if policy.HttpStatus == 301 || policy.HttpStatus == 302 {
+				resp.Header.Set("Location", "https://"+host+req.URL.RequestURI())
+			}
+			if err = resp.Write(clientConn); err != nil {
+				logger.Printf("Send %d fail: %s", policy.HttpStatus, err)
+			} else {
+				logger.Println("Sent", statusLine)
+			}
+			return
+		}
+	case 0x16:
+		payloadLen := binary.BigEndian.Uint16(peekBytes[3:5])
+		record := make([]byte, 5+payloadLen)
+		if _, err = io.ReadFull(br, record); err != nil {
+			logger.Println("Read first record fail:", err)
+			return
+		}
+		prtVer, sniPos, sniLen, hasKeyShare, err := parseClientHello(record)
+		if err != nil {
+			logger.Println("Record parsing fail:", err)
+			return
+		}
+		if policy.Mode == "tls-alert" {
+			// fatal access_denied
+			if err = sendTLSAlert(clientConn, prtVer, 49, 2); err != nil {
+				logger.Println("Send TLS alert fail:", err)
+			}
+			return
+		}
+		if policy.TLS13Only != nil && *policy.TLS13Only && !hasKeyShare {
+			logger.Println("Not a TLS 1.3 ClientHello, connection blocked")
+			// fatal protocol_version
+			if err = sendTLSAlert(clientConn, prtVer, 70, 2); err != nil {
+				logger.Println("Send TLS alert fail:", err)
+			}
+			return
+		}
+		if sniPos <= 0 || sniLen <= 0 {
+			logger.Println("SNI not found")
+			if replyFirst {
+				dstConn, err = net.Dial("tcp", target)
+				if err != nil {
+					logger.Println("Connection failed:", err)
+					return
+				}
+			}
+			if _, err = dstConn.Write(record); err != nil {
+				logger.Println("Send ClientHello directly fail:", err)
+				return
+			}
+			logger.Println("Sent ClientHello directly")
+		} else {
+			sniStr := string(record[sniPos : sniPos+sniLen])
+			if originHost != sniStr {
+				logger.Println("Server name:", sniStr)
+				domainPolicy := domainMatcher.Find(sniStr)
+				if domainPolicy == nil {
+					domainPolicy = &defaultPolicy
+				} else {
+					domainPolicy = mergePolicies(defaultPolicy, *domainPolicy)
+				}
+				switch domainPolicy.Mode {
+				case "block":
+					logger.Println("Connection blocked")
+					return
+				case "tls-alert":
+					if err = sendTLSAlert(clientConn, prtVer, 49, 2); err != nil {
+						logger.Println("Send TLS alert fail:", err)
+					}
+					logger.Println("Connection blocked (tls-alert)")
+					return
+				}
+			}
+
+			if replyFirst {
+				dstConn, err = net.Dial("tcp", target)
+				if err != nil {
+					logger.Println("Connection failed:", err)
+					return
+				}
+			}
+			switch policy.Mode {
+			case "direct":
+				if _, err = dstConn.Write(record); err != nil {
+					logger.Println("Send ClientHello directly fail:", err)
+					return
+				}
+				logger.Println("Sent ClientHello directly")
+			case "tls-rf":
+				err = sendRecords(dstConn, record, sniPos, sniLen,
+					policy.NumRecords, policy.NumSegments,
+					policy.OOB != nil && *policy.OOB, policy.SendDelay)
+				if err != nil {
+					logger.Println("TLS fragmentation fail:", err)
+					return
+				}
+				logger.Println("Successfully sent ClientHello")
+			case "ttl-d":
+				var ttl int
+				ipv6 := target[0] == '['
+				if policy.FakeTTL == 0 {
+					ttl, err = minReachableTTL(target, ipv6)
+					if err != nil {
+						logger.Println("TTL probing fail:", err)
+						sendReply(logger, clientConn, 0x01)
+						return
+					}
+					if ttl == -1 {
+						logger.Println("Reachable TTL not found")
+						sendReply(logger, clientConn, 0x01)
+						return
+					}
+					if calcTTL != nil {
+						ttl, err = calcTTL(ttl)
+						if err != nil {
+							logger.Println("TTL calculating fail:", err)
+							sendReply(logger, clientConn, 0x01)
+							return
+						}
+					} else {
+						ttl -= 1
+					}
+					logger.Printf("fake_ttl=%d", ttl)
+				} else {
+					ttl = policy.FakeTTL
+				}
+				err = desyncSend(
+					dstConn, ipv6, record,
+					sniPos, sniLen, ttl, policy.FakeSleep,
+				)
+				if err != nil {
+					logger.Println("TTL desync fail:", err)
+					return
+				}
+				logger.Println("Successfully sent ClientHello")
+			}
+		}
+	default:
+		logger.Println("Unknown packet type")
+		if replyFirst {
+			dstConn, err = net.Dial("tcp", target)
+			if err != nil {
+				logger.Println("Connection failed:", err)
+				return
+			}
+		}
+	}
+
+	done := make(chan struct{})
+	go func() {
+		io.Copy(dstConn, clientConn)
+		closeBoth()
+		done <- struct{}{}
+	}()
+	go func() {
+		io.Copy(clientConn, dstConn)
+		closeBoth()
+		done <- struct{}{}
+	}()
+	<-done
+	<-done
 }
