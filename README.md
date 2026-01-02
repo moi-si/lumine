@@ -1,5 +1,5 @@
 # lumine
-A lightweight local SOCKS5 server written in Golang that protects TLS connections over TCP.
+A lightweight local HTTP/SOCKS5 proxy server that protects TLS connections over TCP.
 
 ## Installation
 
@@ -19,13 +19,13 @@ go build
 ### Top-Level Fields
 Field|Description|Example|Special Values
 -|-|-|-
-`server_address`|SOCKS5 bind address|`"127.0.0.1:1080"`|`none` disables SOCKS5 proxy
-`http_address`|HTTP bind address|`":1225"`|`none` disables HTTP proxy
-`udp_dns_server`|UDP DNS server address for resolution|`"127.0.0.1:8053"`|-
+`socks5_address`|SOCKS5 bind address|`"127.0.0.1:1080"`|`"none"` disables SOCKS5 proxy
+`http_address`|HTTP bind address|`":1225"`|`"none"` disables HTTP proxy
+`dns_addr`|DNS over UDP/HTTPS server address for resolution|`"127.0.0.1:8053"`, `"https://1.1.1.1/dns-query"`|-
 `udp_minsize`|Minimum UDP packet size for DNS queries|`4096`|`0` uses default DNS client size (may cause error)
+`socks5_for_doh`|SOCKS5 proxy server address for DoH|`"127.0.0.1:1080"`|Empty string disables proxy
 `max_jump`|Maximum redirect chain length for IP mapping|`30`|`0` defaults to 20
 `fake_ttl_rules`|TTL calculation rules for fake packets|`"0-1;3=3;5-1;8-2;13-3;20=18"`|Empty string disables TTL rules
-`fake_packet`|The packet (usually a plaintext HTTP request) that will be sent along with real packet, required by `ttl-d` mode|`"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n"`|-
 `transmit_file_limit`|Maximum concurrent TransmitFile operations|`2`|`0` or negative means no limit (unrestricted concurrency)
 `default_policy`|Default policy applied to all connections|See Policy fields below|-
 `domain_policy`|Domain-specific policies|See Policy fields below|-
