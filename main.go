@@ -26,14 +26,14 @@ func main() {
 
 	flag.Parse()
 
-	serverAddr, httpAddr, err := loadConfig(*configPath)
+	socks5Addr, httpAddr, err := loadConfig(*configPath)
 	if err != nil {
 		fmt.Println("Failed to load config:", err)
 		return
 	}
 
 	done := make(chan struct{})
-	go socks5Accept(addr, serverAddr, done)
+	go socks5Accept(addr, socks5Addr, done)
 	go httpAccept(hAddr, httpAddr, done)
 	<-done
 	<-done

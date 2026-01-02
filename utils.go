@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -262,9 +263,13 @@ func transformIP(ipStr string, targetNetStr string) (string, error) {
 	return net.IP(newIPBytes).String(), nil
 }
 
-var dnsClient *dns.Client
+var (
+	dnsClient *dns.Client
+	httpCli   *http.Client
+	dnsQuery func(string, uint16) (string, error)
+)
 
-func dnsQuery(domain string, qtype uint16) (string, error) {
+func do53Query(domain string, qtype uint16) (string, error) {
 	msg := new(dns.Msg)
 	msg.SetQuestion(domain+".", qtype)
 	resp, _, err := dnsClient.Exchange(msg, dnsAddr)
@@ -275,6 +280,54 @@ func dnsQuery(domain string, qtype uint16) (string, error) {
 		return "", fmt.Errorf("bad rcode: %s", dns.RcodeToString[resp.Rcode])
 	}
 	for _, ans := range resp.Answer {
+		switch qtype {
+		case dns.TypeA:
+			if record, ok := ans.(*dns.A); ok {
+				return record.A.String(), nil
+			}
+		case dns.TypeAAAA:
+			if record, ok := ans.(*dns.AAAA); ok {
+				return record.AAAA.String(), nil
+			}
+		}
+	}
+	return "", errors.New("record not found")
+}
+
+func dohQuery(domain string, qtype uint16) (string, error) {
+	msg := new(dns.Msg)
+	msg.SetQuestion(domain+".", qtype)
+	wire, err := msg.Pack()
+	if err != nil {
+		return "", fmt.Errorf("pack dns request: %s", err)
+	}
+	b64 := base64.RawURLEncoding.EncodeToString(wire)
+	u := fmt.Sprintf("%s?dns=%s", dnsAddr, b64)
+	httpReq, err := http.NewRequest(http.MethodGet, u, nil)
+	if err != nil {
+		return "", fmt.Errorf("build http request: %s", err)
+	}
+	httpReq.Header.Set("Accept", "application/dns-message")
+	resp, err := httpCli.Do(httpReq)
+	if err != nil {
+		return "", fmt.Errorf("http request: %s", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("bad http status: %s", resp.Status)
+	}
+	respWire, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read http body: %s", err)
+	}
+	ans := new(dns.Msg)
+	if err := ans.Unpack(respWire); err != nil {
+		return "", fmt.Errorf("unpack dns response: %s", err)
+	}
+	if ans.Rcode != dns.RcodeSuccess {
+		return "", fmt.Errorf("bad rcode: %s", dns.RcodeToString[ans.Rcode])
+	}
+	for _, ans := range ans.Answer {
 		switch qtype {
 		case dns.TypeA:
 			if record, ok := ans.(*dns.A); ok {
@@ -344,7 +397,7 @@ func ipRedirect(logger *log.Logger, ip string) (string, *Policy, error) {
 }
 
 func handleTunnel(
-	policy *Policy, replyFirst bool, dstConn, clientConn net.Conn, logger *log.Logger,
+	policy *Policy, replyFirst bool, dstConn, cliConn net.Conn, logger *log.Logger,
 	target, originHost string, closeBoth func()) {
 	var err error
 
@@ -356,12 +409,12 @@ func handleTunnel(
 				return
 			}
 		}
-		go io.Copy(clientConn, dstConn)
-		io.Copy(dstConn, clientConn)
+		go io.Copy(cliConn, dstConn)
+		io.Copy(dstConn, cliConn)
 		return
 	}
 
-	br := bufio.NewReader(clientConn)
+	br := bufio.NewReader(cliConn)
 	peekBytes, err := br.Peek(5)
 	if err != nil {
 		if errors.Is(err, io.EOF) {
@@ -423,7 +476,7 @@ func handleTunnel(
 						ContentLength: 0,
 						Close:         true,
 					}
-					if err = resp.Write(clientConn); err != nil {
+					if err = resp.Write(cliConn); err != nil {
 						logger.Println("Send 502 fail:", err)
 					}
 					return
@@ -448,7 +501,7 @@ func handleTunnel(
 			if policy.HttpStatus == 301 || policy.HttpStatus == 302 {
 				resp.Header.Set("Location", "https://"+host+req.URL.RequestURI())
 			}
-			if err = resp.Write(clientConn); err != nil {
+			if err = resp.Write(cliConn); err != nil {
 				logger.Printf("Send %d fail: %s", policy.HttpStatus, err)
 			} else {
 				logger.Println("Sent", statusLine)
@@ -469,7 +522,7 @@ func handleTunnel(
 		}
 		if policy.Mode == "tls-alert" {
 			// fatal access_denied
-			if err = sendTLSAlert(clientConn, prtVer, 49, 2); err != nil {
+			if err = sendTLSAlert(cliConn, prtVer, 49, 2); err != nil {
 				logger.Println("Send TLS alert fail:", err)
 			}
 			return
@@ -477,7 +530,7 @@ func handleTunnel(
 		if policy.TLS13Only != nil && *policy.TLS13Only && !hasKeyShare {
 			logger.Println("Not a TLS 1.3 ClientHello, connection blocked")
 			// fatal protocol_version
-			if err = sendTLSAlert(clientConn, prtVer, 70, 2); err != nil {
+			if err = sendTLSAlert(cliConn, prtVer, 70, 2); err != nil {
 				logger.Println("Send TLS alert fail:", err)
 			}
 			return
@@ -511,7 +564,7 @@ func handleTunnel(
 					logger.Println("Connection blocked")
 					return
 				case "tls-alert":
-					if err = sendTLSAlert(clientConn, prtVer, 49, 2); err != nil {
+					if err = sendTLSAlert(cliConn, prtVer, 49, 2); err != nil {
 						logger.Println("Send TLS alert fail:", err)
 					}
 					logger.Println("Connection blocked (tls-alert)")
@@ -549,19 +602,19 @@ func handleTunnel(
 					ttl, err = minReachableTTL(target, ipv6)
 					if err != nil {
 						logger.Println("TTL probing fail:", err)
-						sendReply(logger, clientConn, 0x01)
+						sendReply(logger, cliConn, 0x01)
 						return
 					}
 					if ttl == -1 {
 						logger.Println("Reachable TTL not found")
-						sendReply(logger, clientConn, 0x01)
+						sendReply(logger, cliConn, 0x01)
 						return
 					}
 					if calcTTL != nil {
 						ttl, err = calcTTL(ttl)
 						if err != nil {
 							logger.Println("TTL calculating fail:", err)
-							sendReply(logger, clientConn, 0x01)
+							sendReply(logger, cliConn, 0x01)
 							return
 						}
 					} else {
@@ -595,12 +648,12 @@ func handleTunnel(
 
 	done := make(chan struct{})
 	go func() {
-		io.Copy(dstConn, clientConn)
+		io.Copy(dstConn, cliConn)
 		closeBoth()
 		done <- struct{}{}
 	}()
 	go func() {
-		io.Copy(clientConn, dstConn)
+		io.Copy(cliConn, dstConn)
 		closeBoth()
 		done <- struct{}{}
 	}()

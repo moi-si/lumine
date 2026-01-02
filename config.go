@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/http"
 	"os"
 	"runtime"
 	"sort"
@@ -11,6 +14,7 @@ import (
 
 	"github.com/miekg/dns"
 	"github.com/moi-si/addrtrie"
+	"golang.org/x/net/proxy"
 )
 
 type Policy struct {
@@ -59,7 +63,7 @@ func (p Policy) String() string {
 	switch p.Mode {
 	case "tls-rf":
 		fields = append(fields, fmt.Sprintf("%d records", p.NumRecords))
-		if p.NumSegments != -1 {
+		if p.NumSegments != -1 && p.NumSegments != 1 {
 			fields = append(fields, fmt.Sprintf("%d segments", p.NumSegments))
 		}
 		if p.NumSegments != 1 {
@@ -132,10 +136,11 @@ func mergePolicies(policies ...Policy) *Policy {
 
 type Config struct {
 	TransmitFileLimit int               `json:"transmit_file_limit"`
-	ServerAddr        string            `json:"server_address"`
+	Socks5Addr        string            `json:"socks5_address"`
 	HttpAddr          string            `json:"http_address"`
-	DNSAddr           string            `json:"udp_dns_addr"`
+	DNSAddr           string            `json:"dns_addr"`
 	UDPSize           uint16            `json:"udp_minsize"`
+	DoHProxy          string            `json:"socks5_for_doh"`
 	MaxJump           uint8             `json:"max_jump"`
 	FakeTTLRules      string            `json:"fake_ttl_rules"`
 	DefaultPolicy     Policy            `json:"default_policy"`
@@ -264,18 +269,40 @@ func loadConfig(filePath string) (string, string, error) {
 	if err = decoder.Decode(&conf); err != nil {
 		return "", "", err
 	}
+
 	defaultPolicy = conf.DefaultPolicy
+
 	dnsAddr = conf.DNSAddr
-	if conf.UDPSize == 0 {
-		dnsClient = new(dns.Client)
+	if strings.HasPrefix(dnsAddr, "https://") {
+		dnsQuery = dohQuery
+		if conf.DoHProxy == "" {
+			httpCli = new(http.Client)
+		} else {
+			dialer, err := proxy.SOCKS5("tcp", conf.DoHProxy, nil, proxy.Direct)
+			if err != nil {
+				return "", "", fmt.Errorf("create socks5 dialer: %s", err)
+			}
+			dialContext := func(ctx context.Context, network, address string) (net.Conn, error) {
+				return dialer.Dial(network, address)
+			}
+			transport := &http.Transport{DialContext: dialContext}
+			httpCli = &http.Client{Transport: transport}
+		}
 	} else {
-		dnsClient = &dns.Client{UDPSize: conf.UDPSize}
+		dnsQuery = do53Query
+		if conf.UDPSize == 0 {
+			dnsClient = new(dns.Client)
+		} else {
+			dnsClient = &dns.Client{UDPSize: conf.UDPSize}
+		}
 	}
+
 	if conf.MaxJump == 0 {
 		maxJump = 20
 	} else {
 		maxJump = conf.MaxJump
 	}
+
 	if conf.FakeTTLRules != "" {
 		err = loadFakeTTLRules(conf.FakeTTLRules)
 		if err != nil {
@@ -311,7 +338,7 @@ func loadConfig(filePath string) (string, string, error) {
 		}
 	}
 
-	return conf.ServerAddr, conf.HttpAddr, nil
+	return conf.Socks5Addr, conf.HttpAddr, nil
 }
 
 func matchIP(ip string) *Policy {

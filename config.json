@@ -1,7 +1,8 @@
 {
-    "server_address": "127.0.0.1:1080",
+    "socks5_address": "127.0.0.1:1080",
     "http_address": "127.0.0.1:1225",
-    "udp_dns_addr": "127.0.0.1:8053",
+    "dns_addr": "https://1997.cloudflare-gateway.com/dns-query",
+    "socks5_for_doh": "127.0.0.1:1080",
     "udp_minsize": 4096,
     "max_jump": 30,
     "fake_ttl_rules": "0-1;3=3;5-1;8-2;13-3;20=18",
@@ -45,14 +46,14 @@
         }
     },
     "domain_policies": {
-        "(*.|)cloudflare.com;cloudflare-dns.com;one.one.one.one;*workers.dev": {
+        "*cloudflare(|-gateway|-dns).com;one.one.one.one;*workers.dev": {
             "host": "172.64.229.211",
             "port": 8443
         },
         "(i|s|).pximg.net": {
             "host": "104.21.3.221"
         },
-        "*(wikimedia|wikipedia|wiktionary|wikiversity|wikivoyage|wikisource|wikinews|wikidata|mediawiki|wikifunctions|wikibooks).org": {
+        "*(wikimedia|wikipedia|wiktionary|wikiversity|wikivoyage|wikisource|wikinews|wikidata|mediawiki|wikifunctions|wikibooks|wikiquote).org": {
             "host": "185.15.58.224"
         },
         "upload.wikimedia.org": {
@@ -116,6 +117,9 @@
         },
         "*(ooni.org|solana.com|vercel.app|sambanova.ai)": {
             "mode": "ttl-d"
+        },
+        "*webnode.jp;*webnode.com": {
+            "mode": "raw"
         },
         "onedrive.live.com": {
             "host": "13.107.139.11",
