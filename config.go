@@ -143,6 +143,8 @@ type Config struct {
 	DoHProxy          string            `json:"socks5_for_doh"`
 	MaxJump           uint8             `json:"max_jump"`
 	FakeTTLRules      string            `json:"fake_ttl_rules"`
+	DNSCacheTTL       int               `json:"dns_cache_ttl"`
+	TTLCacheTTL       int               `json:"ttl_cache_ttl"`
 	DefaultPolicy     Policy            `json:"default_policy"`
 	DomainPolicies    map[string]Policy `json:"domain_policies"`
 	IpPolicies        map[string]Policy `json:"ip_policies"`
@@ -297,10 +299,26 @@ func loadConfig(filePath string) (string, string, error) {
 		}
 	}
 
+	if conf.DNSCacheTTL < -1 {
+		conf.DNSCacheTTL = 0
+	}
+	if conf.DNSCacheTTL != 0 {
+		dnsCacheEnabled = true
+		dnsCacheTTL = conf.DNSCacheTTL
+	}
+
 	if conf.MaxJump == 0 {
 		maxJump = 20
 	} else {
 		maxJump = conf.MaxJump
+	}
+
+	if conf.TTLCacheTTL < -1 {
+		conf.TTLCacheTTL = 0
+	}
+	if conf.TTLCacheTTL != 0 {
+		ttlCacheEnabled = true
+		ttlCacheTTL = conf.TTLCacheTTL
 	}
 
 	if conf.FakeTTLRules != "" {

@@ -27,6 +27,8 @@ Field|Description|Example|Special Values
 `max_jump`|Maximum redirect chain length for IP mapping|`30`|`0` defaults to 20
 `fake_ttl_rules`|TTL calculation rules for fake packets|`"0-1;3=3;5-1;8-2;13-3;20=18"`|Empty string disables TTL rules
 `transmit_file_limit`|Maximum concurrent TransmitFile operations|`2`|`0` or negative means no limit (unrestricted concurrency)
+`dns_cache_ttl`|How long a DNS answer is kept in the in‑memory cache (seconds)|`259200`|`-1` → cache forever; `0` → disable DNS caching entirely
+`fake_ttl_cache_ttl`|How long a minimum reachable TTL is kept in the in‑memory cache (seconds)|`259200`|`-1` → cache forever; `0` → disable DNS caching entirely
 `default_policy`|Default policy applied to all connections|See Policy fields below|-
 `domain_policy`|Domain-specific policies|See Policy fields below|-
 `ip_policy`|IP/CIDR-specific policies|See Policy fields below|-

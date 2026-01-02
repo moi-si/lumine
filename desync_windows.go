@@ -18,13 +18,32 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-var ttlCache sync.Map
+var (
+	ttlCacheEnabled bool
+	ttlCache        sync.Map
+	ttlCacheTTL int
+)
+
+type ttlCacheValue struct {
+	TTL      int
+	ExpireAt time.Time
+}
 
 func minReachableTTL(addr string, ipv6 bool) (int, error) {
-	v, ok := ttlCache.Load(addr)
-	if ok {
-		return v.(int), nil
+	if ttlCacheEnabled {
+		v, ok := ttlCache.Load(addr)
+		if ok {
+			k := v.(ttlCacheValue)
+			if !k.ExpireAt.IsZero() {
+				if time.Now().Before(k.ExpireAt) {
+					return k.TTL, nil
+				} else {
+					ttlCache.Delete(addr)
+				}
+			}
+		}
 	}
+
 	var level, opt int
 	if ipv6 {
 		level, opt = windows.IPPROTO_IPV6, windows.IPV6_UNICAST_HOPS
@@ -47,7 +66,20 @@ func minReachableTTL(addr string, ipv6 bool) (int, error) {
 			low = mid + 1
 		}
 	}
-	ttlCache.Store(addr, found)
+
+	if ttlCacheEnabled {
+		var expireAt time.Time
+		if ttlCacheTTL == -1 {
+			expireAt = time.Time{}
+		} else {
+			expireAt = time.Now().Add(time.Duration(ttlCacheTTL * int(time.Second)))
+		}
+		ttlCache.Store(addr, ttlCacheValue{
+			TTL:      found,
+			ExpireAt: expireAt,
+		})
+	}
+
 	return found, nil
 }
 
