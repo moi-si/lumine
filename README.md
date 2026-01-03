@@ -1,5 +1,5 @@
 # lumine
-A lightweight local HTTP/SOCKS5 proxy server that protects TLS connections over TCP.
+A lightweight local HTTP/SOCKS5 proxy server that protects TLS connections over TCP, based on [TlsFragment](https://github.com/moi-si/TlsFragment).
 
 ## Installation
 
