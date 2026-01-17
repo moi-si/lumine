@@ -75,7 +75,6 @@ func (m Mode) String() string {
 
 const (
 	defaultTimeout = 30 * time.Second
-	minFakeSleep   = 100 * time.Millisecond
 )
 
 type Policy struct {
@@ -204,14 +203,12 @@ func (p *Policy) UnmarshalJSON(data []byte) error {
 		}
 	}
 
-	if tmp.FakeSleep == nil {
-		p.FakeSleep = minFakeSleep
-	} else {
+	if tmp.FakeSleep != nil {
 		p.FakeSleep, err = time.ParseDuration(*tmp.FakeSleep)
 		if err != nil {
 			return fmt.Errorf("parse fake_sleep %s: %w", *tmp.ConnectTimeout, err)
 		}
-		if p.ConnectTimeout < minFakeSleep {
+		if p.ConnectTimeout < 0 {
 			return errors.New("fake_sleep < minimum fake sleep")
 		}
 	}
@@ -266,7 +263,7 @@ func (p *Policy) String() string {
 			} else {
 				fields = append(fields, fmt.Sprintf("fake_ttl=%d", p.FakeTTL))
 			}
-			fields = append(fields, "fake_sleep=%s"+p.FakeSleep.String())
+			fields = append(fields, "fake_sleep="+p.FakeSleep.String())
 		}
 	}
 	return strings.Join(fields, " | ")

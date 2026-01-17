@@ -227,7 +227,7 @@ func handleSOCKS5(clientConn net.Conn, id uint32) {
 		sendReply(logger, clientConn, 0x02)
 		return
 	}
-	if policy.Port != 0 {
+	if policy.Port != 0 && policy.Port != -1 {
 		dstPort = uint16(policy.Port)
 	}
 	target := net.JoinHostPort(dstHost, fmt.Sprintf("%d", dstPort))

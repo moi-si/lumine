@@ -18,7 +18,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-const minInterval = 100 * time.Microsecond
+const minInterval = 100 * time.Millisecond
 
 var (
 	ttlCacheEnabled bool
@@ -117,9 +117,6 @@ func sendFakeData(
 	fakeLen, fakeTTL, defaultTTL, level, opt int,
 	fakeSleep time.Duration,
 ) error {
-	if fakeSleep < minInterval {
-		fakeSleep = minInterval
-	}
 	toWrite := uint32(fakeLen)
 
 	tmpFile := filepath.Join(os.TempDir(), uuid.New().String())
@@ -257,10 +254,28 @@ func desyncSend(
 		fakeSleep = minInterval
 	}
 
-	cut := sniLen/2 + sniPos
+	cut := -1
+	for i := sniPos + sniLen; i >= sniPos; i-- {
+		if firstPacket[i] == '.' {
+			cut = i
+			break
+		}
+	}
+	var fakeData []byte
+	if cut == -1 {
+		cut = sniLen/2 + sniPos
+		fakeData = firstPacket[:cut]
+	} else {
+		fakeData = make([]byte, cut)
+		copy(fakeData, firstPacket[:sniPos])
+		for i := sniPos; i < cut; i++ {
+			fakeData[i] = 0x00
+		}
+	}
+
 	err = sendFakeData(
 		sockHandle,
-		make([]byte, cut),
+		fakeData,
 		firstPacket[:cut],
 		cut,
 		fakeTTL,
