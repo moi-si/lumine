@@ -1,5 +1,5 @@
 # lumine
-A lightweight local HTTP/SOCKS5 proxy server that protects TLS connections over TCP, based on [TlsFragment](https://github.com/moi-si/TlsFragment).
+A lightweight local HTTP/SOCKS5 proxy server that protects TLS connections over TCP, based on [TlsFragment](https://github.com/maoist2009/TlsFragment).
 
 ## Installation
 
@@ -35,6 +35,7 @@ Field|Description|Example|Special Values
 ### Policy Fields
 Field|Description|Example|Special Values
 -|-|-|-
+`connect_timeout`|Maximum time to wait for a connection to be established|`"10s"`|-
 `reply_first`|Send SOCKS5 reply SUCCESS before connecting|`true`|-
 `host`|Override target host|`"^208.103.161.2"`, `"www.ietf.org"`|Prefix `^` disables IP redirection
 `map_to`|Redirect IP to another host/CIDR|`"35.180.16.12"`, `"^www.fbi.org"`|Prefix `^` disables chain jump
@@ -47,9 +48,9 @@ Field|Description|Example|Special Values
 `num_records`|Number of TLS records for fragmentation|`10`|`1` disables fragmentation
 `num_segs`|Number of segments for TCP fragmentation|`3`|`1` disables segment splitting; when `-1`, send 1 record each time
 `oob`|Attach Out-Of-Band (OOB) data to the end of the first TCP segment|`true`|-
-`send_delay`|Delay between sending segments (seconds)|`0.3`|`0` or negative means no delay
+`send_interval`|Interval between sending segments|`"200ms"`|`0s` means no delay
 `fake_ttl`|TTL value for fake packets in `ttl-d` mode|`17`|`0` enables auto TTL detection
-`fake_sleep`|Sleep time after sending fake packet (seconds)|`0.2`|-
+`fake_sleep`|Sleep time after sending fake packet|`"200ms"`|-
 ### Mode  Values
 Mode|Description|Used For
 -|-|-
@@ -59,9 +60,6 @@ Mode|Description|Used For
 `ttl-d`|TTL-based desynchronization with fake packets|TLS connections
 `block`|Block connection entirely|Connection termination
 `tls-alert`|Send TLS alert and terminate connection|TLS connection termination
-
-## Local DNS over UDP
-See [YkDNS](https://github.com/moi-si/ykdns).
 
 ## License
 

@@ -10,7 +10,7 @@ import (
 
 func sendRecords(conn net.Conn, data []byte, offset, length,
 	numRcd, numSeg int, oob bool,
-	interval *float64) error {
+	interval time.Duration) error {
 	if len(data) < 5 {
 		return errors.New("data too short")
 	}
@@ -45,7 +45,7 @@ func sendRecords(conn net.Conn, data []byte, offset, length,
 	splitAndAppend(payload[cut:], header, rightChunks, &chunks)
 
 	if numSeg == -1 {
-		itv := interval != nil && *interval > 0
+		itv := interval != 0
 		for i, chunk := range chunks {
 			if _, err := conn.Write(chunk); err != nil {
 				return fmt.Errorf("write record %d: %s", i+1, err)
@@ -56,7 +56,7 @@ func sendRecords(conn net.Conn, data []byte, offset, length,
 				}
 			}
 			if itv {
-				time.Sleep(time.Duration(*interval * float64(time.Second)))
+				time.Sleep(interval)
 			}
 		}
 		return nil
@@ -77,7 +77,7 @@ func sendRecords(conn net.Conn, data []byte, offset, length,
 	}
 
 	base := len(merged) / numSeg
-	itv := interval != nil && *interval > 0
+	itv := interval != 0 && interval != -1
 	for i := range numSeg {
 		start := i * base
 		end := start + base
@@ -93,7 +93,7 @@ func sendRecords(conn net.Conn, data []byte, offset, length,
 			}
 		}
 		if itv {
-			time.Sleep(time.Duration(*interval * float64(time.Second)))
+			time.Sleep(interval)
 		}
 	}
 	return nil

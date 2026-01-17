@@ -12,15 +12,16 @@
     "default_policy": {
         "reply_first": false,
         "dns_retry": false,
+        "connect_timeout": "10s",
         "http_status": 0,
         "mode": "tls-rf",
         "tls13_only": true,
         "num_records": 4,
         "num_segs": 3,
         "oob": true,
-        "send_delay": 0,
+        "send_interval": "0s",
         "fake_ttl": 0,
-        "fake_sleep": 0.2
+        "fake_sleep": "200ms"
     },
     "ip_policies": {
         "(104.16|172.64).0.0/13;104.24.0.0/14;162.158.0.0/15;188.114.96.0/20;66.235.200.0/24;8.6.112.0;8.47.69.0": {
@@ -48,7 +49,7 @@
         }
     },
     "domain_policies": {
-        "*cloudflare(|-gateway|-dns).com;one.one.one.one;*workers.dev": {
+        "*cloudflare(|-gateway|-dns).com;one.one.one.one;*(worker|page)s.dev": {
             "host": "172.64.229.211",
             "port": 8443
         },
@@ -95,7 +96,6 @@
         "*(google.com|google.com.hk|gmail.com|google.dev|googleapis.com|gstatic.com|googleusercontent.com|.google|goo.gl|translate.goog|android.com|ai.dev|blogger.com|blogspot.com|blogblog.com|chrome.com|chromium.org|golang.org|youtube.com|youtu.be|youtube-nocookie.com|.ytimg.com|.ggpht.com|gvt1.com|withgoogle.com|googlesource.com)": {
             "host": "172.253.139.90"
         },
-        "www.gstatic.com": {},
         "*.googlevideo.com": {
             "ipv6_first": true
         },

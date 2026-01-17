@@ -481,16 +481,27 @@ func handleTunnel(
 	target, originHost string, closeBoth func()) {
 	var err error
 
-	if policy.Mode == "raw" {
+	if policy.Mode == ModeRaw {
 		if replyFirst {
-			dstConn, err = net.Dial("tcp", target)
+			dstConn, err = net.DialTimeout("tcp", target, policy.ConnectTimeout)
 			if err != nil {
 				logger.Println("Connection failed:", err)
 				return
 			}
 		}
-		go io.Copy(cliConn, dstConn)
-		io.Copy(dstConn, cliConn)
+		done := make(chan struct{}, 2)
+		go func() {
+			io.Copy(dstConn, cliConn)
+			closeBoth()
+			done <- struct{}{}
+		}()
+		go func() {
+			io.Copy(cliConn, dstConn)
+			closeBoth()
+			done <- struct{}{}
+		}()
+		<-done
+		<-done
 		return
 	}
 
@@ -541,9 +552,9 @@ func handleTunnel(
 				}
 			}
 		}
-		if policy.HttpStatus == 0 {
+		if policy.HttpStatus == 0 || policy.HttpStatus == -1 {
 			if replyFirst {
-				dstConn, err = net.Dial("tcp", target)
+				dstConn, err = net.DialTimeout("tcp", target, policy.ConnectTimeout)
 				if err != nil {
 					logger.Println("Connection failed:", err)
 					resp := &http.Response{
@@ -600,14 +611,14 @@ func handleTunnel(
 			logger.Println("Record parsing fail:", err)
 			return
 		}
-		if policy.Mode == "tls-alert" {
+		if policy.Mode == ModeTLSAlert {
 			// fatal access_denied
 			if err = sendTLSAlert(cliConn, prtVer, 49, 2); err != nil {
 				logger.Println("Send TLS alert fail:", err)
 			}
 			return
 		}
-		if policy.TLS13Only != nil && *policy.TLS13Only && !hasKeyShare {
+		if policy.TLS13Only == BoolTrue && !hasKeyShare {
 			logger.Println("Not a TLS 1.3 ClientHello, connection blocked")
 			// fatal protocol_version
 			if err = sendTLSAlert(cliConn, prtVer, 70, 2); err != nil {
@@ -618,7 +629,7 @@ func handleTunnel(
 		if sniPos <= 0 || sniLen <= 0 {
 			logger.Println("SNI not found")
 			if replyFirst {
-				dstConn, err = net.Dial("tcp", target)
+				dstConn, err = net.DialTimeout("tcp", target, policy.ConnectTimeout)
 				if err != nil {
 					logger.Println("Connection failed:", err)
 					return
@@ -640,10 +651,10 @@ func handleTunnel(
 					domainPolicy = mergePolicies(defaultPolicy, *domainPolicy)
 				}
 				switch domainPolicy.Mode {
-				case "block":
+				case ModeBlock:
 					logger.Println("Connection blocked")
 					return
-				case "tls-alert":
+				case ModeTLSAlert:
 					if err = sendTLSAlert(cliConn, prtVer, 49, 2); err != nil {
 						logger.Println("Send TLS alert fail:", err)
 					}
@@ -653,32 +664,32 @@ func handleTunnel(
 			}
 
 			if replyFirst {
-				dstConn, err = net.Dial("tcp", target)
+				dstConn, err = net.DialTimeout("tcp", target, policy.ConnectTimeout)
 				if err != nil {
 					logger.Println("Connection failed:", err)
 					return
 				}
 			}
 			switch policy.Mode {
-			case "direct":
+			case ModeDirect:
 				if _, err = dstConn.Write(record); err != nil {
 					logger.Println("Send ClientHello directly fail:", err)
 					return
 				}
 				logger.Println("Sent ClientHello directly")
-			case "tls-rf":
+			case ModeTLSRF:
 				err = sendRecords(dstConn, record, sniPos, sniLen,
 					policy.NumRecords, policy.NumSegments,
-					policy.OOB != nil && *policy.OOB, policy.SendDelay)
+					policy.OOB == BoolTrue, policy.SendInterval)
 				if err != nil {
 					logger.Println("TLS fragmentation fail:", err)
 					return
 				}
 				logger.Println("Successfully sent ClientHello")
-			case "ttl-d":
+			case ModeTTLD:
 				var ttl int
 				ipv6 := target[0] == '['
-				if policy.FakeTTL == 0 {
+				if policy.FakeTTL == 0 || policy.FakeTTL == -1 {
 					ttl, err = minReachableTTL(target, ipv6)
 					if err != nil {
 						logger.Println("TTL probing fail:", err)
@@ -718,7 +729,7 @@ func handleTunnel(
 	default:
 		logger.Println("Unknown packet type")
 		if replyFirst {
-			dstConn, err = net.Dial("tcp", target)
+			dstConn, err = net.DialTimeout("tcp", target, policy.ConnectTimeout)
 			if err != nil {
 				logger.Println("Connection failed:", err)
 				return
@@ -739,4 +750,107 @@ func handleTunnel(
 	}()
 	<-done
 	<-done
+}
+
+func genPolicy(logger *log.Logger, originHost string) (dstHost string, policy *Policy, fail bool) {
+	var err error
+
+	if net.ParseIP(originHost) != nil {
+		var ipPolicy *Policy
+		dstHost, ipPolicy, err = ipRedirect(logger, originHost)
+		if err != nil {
+			logger.Println("IP redirect error:", err)
+			return "", nil, true
+		}
+		if ipPolicy == nil {
+			policy = &defaultPolicy
+		} else {
+			policy = mergePolicies(defaultPolicy, *ipPolicy)
+		}
+	} else {
+		domainPolicy := domainMatcher.Find(originHost)
+		found := domainPolicy != nil
+		if found {
+			policy = mergePolicies(defaultPolicy, *domainPolicy)
+		} else {
+			policy = &defaultPolicy
+		}
+		var disableRedirect bool
+		if policy.Host == nil || *policy.Host == "" {
+			var first uint16
+			if policy.IPv6First == BoolTrue {
+				first = dns.TypeAAAA
+			} else {
+				first = dns.TypeA
+			}
+			if policy.DNSRetry == BoolTrue {
+				var second uint16
+				if first == dns.TypeA {
+					second = dns.TypeAAAA
+				} else {
+					second = dns.TypeA
+				}
+				var err1, err2 error
+				dstHost, err1, err2 = doubleQuery(originHost, first, second)
+				if err2 != nil {
+					logger.Printf("DNS %s fail: %s, %s", originHost, err1, err2)
+					return "", nil, true
+				}
+			} else {
+				var err error
+				dstHost, err = dnsQuery(originHost, first)
+				if err != nil {
+					logger.Printf("DNS %s fail: %s", originHost, err)
+					return "", nil, true
+				}
+				logger.Printf("DNS %s -> %s", originHost, dstHost)
+			}
+		} else {
+			disableRedirect = (*policy.Host)[0] == '^'
+			if disableRedirect {
+				dstHost = (*policy.Host)[1:]
+			} else {
+				dstHost = *policy.Host
+			}
+		}
+		if !disableRedirect {
+			var ipPolicy *Policy
+			dstHost, ipPolicy, err = ipRedirect(logger, dstHost)
+			if err != nil {
+				logger.Println("IP redirect error:", err)
+				return "", nil, true
+			}
+			if ipPolicy != nil {
+				if found {
+					policy = mergePolicies(defaultPolicy, *ipPolicy, *domainPolicy)
+				} else {
+					policy = mergePolicies(defaultPolicy, *ipPolicy)
+				}
+			}
+		}
+	}
+	return
+}
+
+type BoolWithDefault uint8
+
+const (
+	BoolUnset BoolWithDefault = iota
+	BoolFalse
+	BoolTrue
+)
+
+func (b *BoolWithDefault) UnmarshalJSON(data []byte) error {
+	s := string(data)
+	switch s {
+	case "null":
+		*b = BoolUnset
+	case "false":
+		*b = BoolFalse
+	case "true":
+		*b = BoolTrue
+	default:
+		return fmt.Errorf("Invalid bool: %s", s)
+	}
+	return nil
 }

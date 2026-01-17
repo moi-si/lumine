@@ -18,10 +18,12 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+const minInterval = 100 * time.Microsecond
+
 var (
 	ttlCacheEnabled bool
 	ttlCache        sync.Map
-	ttlCacheTTL int
+	ttlCacheTTL     int
 )
 
 type ttlCacheValue struct {
@@ -113,10 +115,10 @@ func sendFakeData(
 	sockHandle windows.Handle,
 	fakeData, realData []byte,
 	fakeLen, fakeTTL, defaultTTL, level, opt int,
-	fakeSleep float64,
+	fakeSleep time.Duration,
 ) error {
-	if fakeSleep < 0.1 {
-		fakeSleep = 0.1
+	if fakeSleep < minInterval {
+		fakeSleep = minInterval
 	}
 	toWrite := uint32(fakeLen)
 
@@ -187,7 +189,7 @@ func sendFakeData(
 		nil,
 		windows.TF_USE_KERNEL_APC|windows.TF_WRITE_BEHIND,
 	)
-	time.Sleep(time.Duration(fakeSleep * float64(time.Second)))
+	time.Sleep(time.Duration(fakeSleep))
 
 	if _, err = windows.SetFilePointer(fileHandle, 0, zero, 0); err != nil {
 		return fmt.Errorf("set file pointer: %v", err)
@@ -224,7 +226,7 @@ func sendFakeData(
 
 func desyncSend(
 	conn net.Conn, ipv6 bool,
-	firstPacket []byte, sniPos, sniLen, fakeTTL int, fakeSleep float64,
+	firstPacket []byte, sniPos, sniLen, fakeTTL int, fakeSleep time.Duration,
 ) error {
 	rawConn, err := getRawConn(conn)
 	if err != nil {
@@ -251,8 +253,8 @@ func desyncSend(
 		return fmt.Errorf("get default TTL: %s", err)
 	}
 
-	if fakeSleep < 0.1 {
-		fakeSleep = 0.1
+	if fakeSleep < minInterval {
+		fakeSleep = minInterval
 	}
 
 	cut := sniLen/2 + sniPos

@@ -10,8 +10,6 @@ import (
 	"os"
 	"slices"
 	"sync"
-
-	"github.com/miekg/dns"
 )
 
 func main() {
@@ -106,7 +104,7 @@ func handleSOCKS5(clientConn net.Conn, id uint32) {
 	defer closeBoth()
 
 	logger := log.New(os.Stdout, fmt.Sprintf("[S%05x] ", id), log.LstdFlags)
-	logger.Println("Conn from", clientConn.RemoteAddr().String())
+	logger.Println("Connection from", clientConn.RemoteAddr().String())
 
 	header, err := readN(clientConn, 2)
 	if err != nil {
@@ -167,6 +165,7 @@ func handleSOCKS5(clientConn net.Conn, id uint32) {
 		dstHost, ipPolicy, err = ipRedirect(logger, originHost)
 		if err != nil {
 			logger.Println("IP redirect error:", err)
+			sendReply(logger, clientConn, 0x01)
 			return
 		}
 		if ipPolicy == nil {
@@ -185,6 +184,7 @@ func handleSOCKS5(clientConn net.Conn, id uint32) {
 		dstHost, ipPolicy, err = ipRedirect(logger, originHost)
 		if err != nil {
 			logger.Println("IP redirect error:", err)
+			sendReply(logger, clientConn, 0x01)
 			return
 		}
 		if ipPolicy == nil {
@@ -201,85 +201,13 @@ func handleSOCKS5(clientConn net.Conn, id uint32) {
 		domainBytes, err := readN(clientConn, int(lenByte[0]))
 		if err != nil {
 			logger.Println("Read domain fail:", err)
-			return
 		}
 		originHost = string(domainBytes)
-		// For Firefox
-		if net.ParseIP(originHost) != nil {
-			var ipPolicy *Policy
-			dstHost, ipPolicy, err = ipRedirect(logger, originHost)
-			if err != nil {
-				logger.Println("IP redirect error:", err)
-				return
-			}
-			if ipPolicy == nil {
-				policy = &defaultPolicy
-			} else {
-				policy = mergePolicies(defaultPolicy, *ipPolicy)
-			}
-		} else {
-			domainPolicy := domainMatcher.Find(originHost)
-			found := domainPolicy != nil
-			if found {
-				policy = mergePolicies(defaultPolicy, *domainPolicy)
-			} else {
-				policy = &defaultPolicy
-			}
-			var disableRedirect bool
-			if policy.Host == nil || *policy.Host == "" {
-				var first uint16
-				if policy.IPv6First != nil && *policy.IPv6First {
-					first = dns.TypeAAAA
-				} else {
-					first = dns.TypeA
-				}
-				if policy.DNSRetry != nil && *policy.DNSRetry {
-					var second uint16
-					if first == dns.TypeA {
-						second = dns.TypeAAAA
-					} else {
-						second = dns.TypeA
-					}
-					var err1, err2 error
-					dstHost, err1, err2 = doubleQuery(originHost, first, second)
-					if err2 != nil {
-						logger.Printf("DNS %s fail: %s, %s", originHost, err1, err2)
-						sendReply(logger, clientConn, 0x01)
-						return
-					}
-				} else {
-					var err error
-					dstHost, err = dnsQuery(originHost, first)
-					if err != nil {
-						logger.Printf("DNS %s fail: %s", originHost, err)
-						sendReply(logger, clientConn, 0x01)
-						return
-					}
-					logger.Printf("DNS %s -> %s", originHost, dstHost)
-				}
-			} else {
-				disableRedirect = (*policy.Host)[0] == '^'
-				if disableRedirect {
-					dstHost = (*policy.Host)[1:]
-				} else {
-					dstHost = *policy.Host
-				}
-			}
-			var ipPolicy *Policy
-			if !disableRedirect {
-				dstHost, ipPolicy, err = ipRedirect(logger, dstHost)
-				if err != nil {
-					logger.Println("IP redirect error:", err)
-					return
-				}
-				if ipPolicy != nil {
-					if found {
-						policy = mergePolicies(defaultPolicy, *ipPolicy, *domainPolicy)
-					} else {
-						policy = mergePolicies(defaultPolicy, *ipPolicy)
-					}
-				}
-			}
+		var fail bool
+		dstHost, policy, fail = genPolicy(logger, originHost)
+		if fail {
+			sendReply(logger, clientConn, 0x01)
+			return
 		}
 	default:
 		logger.Println("Invalid address type:", header[3])
@@ -295,27 +223,25 @@ func handleSOCKS5(clientConn net.Conn, id uint32) {
 	oldTarget := net.JoinHostPort(originHost, fmt.Sprintf("%d", dstPort))
 	logger.Println("CONNECT", oldTarget)
 	logger.Println("Policy:", policy)
-	if policy.Mode == "block" {
+	if policy.Mode == ModeBlock {
 		sendReply(logger, clientConn, 0x02)
 		return
 	}
-	if policy.Port != nil && *policy.Port != 0 {
-		dstPort = *policy.Port
+	if policy.Port != 0 {
+		dstPort = uint16(policy.Port)
 	}
 	target := net.JoinHostPort(dstHost, fmt.Sprintf("%d", dstPort))
 
-	replyFirst := policy.ReplyFirst != nil && *policy.ReplyFirst
-	if replyFirst {
-		sendReply(logger, clientConn, 0x00)
-	} else {
-		dstConn, err = net.Dial("tcp", target)
+	replyFirst := policy.ReplyFirst == BoolTrue
+	if !replyFirst {
+		dstConn, err = net.DialTimeout("tcp", target, policy.ConnectTimeout)
 		if err != nil {
 			logger.Println("Connection failed:", err)
 			sendReply(logger, clientConn, 0x01)
 			return
 		}
-		sendReply(logger, clientConn, 0x00)
 	}
+	sendReply(logger, clientConn, 0x00)
 
 	handleTunnel(policy, replyFirst, dstConn, clientConn,
 		logger, target, originHost, closeBoth)
