@@ -96,7 +96,7 @@ func handleConnect(logger *log.Logger, w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	if policy.Port != 0 {
+	if policy.Port != 0 && policy.Port != -1 {
 		dstPort = fmt.Sprintf("%d", policy.Port)
 	}
 
