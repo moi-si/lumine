@@ -14,7 +14,10 @@ import (
 	"time"
 )
 
-const status500 = "500 Internal Server Error"
+const (
+	status500 = "500 Internal Server Error"
+	status403 = "403 Forbidden"
+)
 
 var httpConnID uint32
 
@@ -38,6 +41,9 @@ func httpAccept(addr *string, serverAddr string, done chan struct{}) {
 		Addr:              listenAddr,
 		Handler:           http.HandlerFunc(handleHTTP),
 		ReadHeaderTimeout: 10 * time.Second,
+	}
+	if listenAddr[0] == ':' {
+		listenAddr = "0.0.0.0" + listenAddr
 	}
 	fmt.Println("Listening on", "http://"+listenAddr)
 	if err := srv.ListenAndServe(); err != nil {
@@ -83,9 +89,14 @@ func handleConnect(logger *log.Logger, w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	dstHost, policy, fail := genPolicy(logger, originHost)
+	dstHost, policy, fail, block := genPolicy(logger, originHost)
 	if fail {
 		http.Error(w, status500, http.StatusInternalServerError)
+		return
+	}
+	if block {
+		logger.Println("Connection blocked")
+		http.Error(w, status403, http.StatusForbidden)
 		return
 	}
 

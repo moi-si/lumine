@@ -752,7 +752,7 @@ func handleTunnel(
 	<-done
 }
 
-func genPolicy(logger *log.Logger, originHost string) (dstHost string, policy *Policy, fail bool) {
+func genPolicy(logger *log.Logger, originHost string) (dstHost string, policy *Policy, fail bool, block bool) {
 	var err error
 
 	if net.ParseIP(originHost) != nil {
@@ -760,12 +760,15 @@ func genPolicy(logger *log.Logger, originHost string) (dstHost string, policy *P
 		dstHost, ipPolicy, err = ipRedirect(logger, originHost)
 		if err != nil {
 			logger.Println("IP redirect error:", err)
-			return "", nil, true
+			return "", nil, true, false
 		}
 		if ipPolicy == nil {
 			policy = &defaultPolicy
 		} else {
 			policy = mergePolicies(defaultPolicy, *ipPolicy)
+		}
+		if policy.Mode == ModeBlock {
+			return "", nil, false, true
 		}
 	} else {
 		domainPolicy := domainMatcher.Find(originHost)
@@ -774,6 +777,9 @@ func genPolicy(logger *log.Logger, originHost string) (dstHost string, policy *P
 			policy = mergePolicies(defaultPolicy, *domainPolicy)
 		} else {
 			policy = &defaultPolicy
+		}
+		if policy.Mode == ModeBlock {
+			return "", nil, false, true
 		}
 		var disableRedirect bool
 		if policy.Host == nil || *policy.Host == "" {
@@ -794,14 +800,14 @@ func genPolicy(logger *log.Logger, originHost string) (dstHost string, policy *P
 				dstHost, err1, err2 = doubleQuery(originHost, first, second)
 				if err2 != nil {
 					logger.Printf("DNS %s fail: %s, %s", originHost, err1, err2)
-					return "", nil, true
+					return "", nil, true, false
 				}
 			} else {
 				var err error
 				dstHost, err = dnsQuery(originHost, first)
 				if err != nil {
 					logger.Printf("DNS %s fail: %s", originHost, err)
-					return "", nil, true
+					return "", nil, true, false
 				}
 				logger.Printf("DNS %s -> %s", originHost, dstHost)
 			}
@@ -818,7 +824,7 @@ func genPolicy(logger *log.Logger, originHost string) (dstHost string, policy *P
 			dstHost, ipPolicy, err = ipRedirect(logger, dstHost)
 			if err != nil {
 				logger.Println("IP redirect error:", err)
-				return "", nil, true
+				return "", nil, true, false
 			}
 			if ipPolicy != nil {
 				if found {

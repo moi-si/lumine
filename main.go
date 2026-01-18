@@ -58,6 +58,9 @@ func socks5Accept(addr *string, serverAddr string, done chan struct{}) {
 		fmt.Println("SOCKS5 Listen error:", err)
 		return
 	}
+	if listenAddr[0] == ':' {
+		listenAddr = "0.0.0.0" + listenAddr
+	}
 	fmt.Println("Listening on", "socks5://"+listenAddr)
 
 	var connID uint32
@@ -203,10 +206,15 @@ func handleSOCKS5(clientConn net.Conn, id uint32) {
 			logger.Println("Read domain fail:", err)
 		}
 		originHost = string(domainBytes)
-		var fail bool
-		dstHost, policy, fail = genPolicy(logger, originHost)
+		var fail, block bool
+		dstHost, policy, fail, block = genPolicy(logger, originHost)
 		if fail {
 			sendReply(logger, clientConn, 0x01)
+			return
+		}
+		if block {
+			logger.Printf("Blocked connection to %s", originHost)
+			sendReply(logger, clientConn, 0x02)
 			return
 		}
 	default:
