@@ -3,8 +3,8 @@
 package main
 
 import (
-	"context"
 	"fmt"
+	"log"
 	"net"
 	"sync"
 	"syscall"
@@ -26,33 +26,7 @@ type ttlCacheEntry struct {
 	ExpireAt time.Time
 }
 
-func tryConnectWithTTL(target string, level, opt, ttl int) (bool, error) {
-	dialer := net.Dialer{
-		Timeout: 500 * time.Millisecond,
-		Control: func(network, address string, c syscall.RawConn) error {
-			var sockErr error
-			err := c.Control(func(fd uintptr) {
-				sockErr = unix.SetsockoptInt(int(fd),
-					level,
-					opt,
-					ttl)
-			})
-			if err != nil {
-				return err
-			}
-			return sockErr
-		},
-	}
-
-	conn, err := dialer.DialContext(context.Background(), "tcp", target)
-	if err != nil {
-		return false, err
-	}
-	conn.Close()
-	return true, nil
-}
-
-func minReachableTTL(addr string, ipv6 bool) (int, error) {
+func minReachableTTL(addr string, ipv6 bool, maxTTL, attempts int, dialTimeout time.Duration) (int, error) {
 	if ttlCacheEnabled {
 		v, ok := ttlCache.Load(addr)
 		if ok {
@@ -73,14 +47,34 @@ func minReachableTTL(addr string, ipv6 bool) (int, error) {
 	} else {
 		level, opt = unix.IPPROTO_IP, unix.IP_TTL
 	}
-	low, high := 1, 32
+
+	dialer := net.Dialer{Timeout: dialTimeout}
+
+	low, high := 1, maxTTL
 	found := -1
 
 	for low <= high {
 		mid := (low + high) / 2
-		ok, err := tryConnectWithTTL(addr, level, opt, mid)
-		if err != nil {
-			ok = false
+		dialer.Control = func(_, _ string, c syscall.RawConn) error {
+			var sockErr error
+			err := c.Control(func(fd uintptr) {
+				sockErr = unix.SetsockoptInt(int(fd), level, opt, mid)
+			})
+			if err != nil {
+				return fmt.Errorf("control: %w", err)
+			}
+			return sockErr
+		}
+		var ok bool
+		for range attempts {
+			conn, err := dialer.Dial("tcp", addr)
+			if err == nil {
+				conn.Close()
+				ok = true
+				break
+			} else {
+				log.Println(err)
+			}
 		}
 		if ok {
 			found = mid
@@ -90,7 +84,7 @@ func minReachableTTL(addr string, ipv6 bool) (int, error) {
 		}
 	}
 
-	if ttlCacheEnabled {
+	if ttlCacheEnabled && found != -1 {
 		var expireAt time.Time
 		if ttlCacheTTL == -1 {
 			expireAt = time.Time{}

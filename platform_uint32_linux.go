@@ -1,6 +1,4 @@
 //go:build (arm || 386) && linux
-// +build arm 386
-// +build linux
 
 package main
 

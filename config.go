@@ -73,10 +73,6 @@ func (m Mode) String() string {
 	return "unknown"
 }
 
-const (
-	defaultTimeout = 30 * time.Second
-)
-
 type Policy struct {
 	ReplyFirst     BoolWithDefault
 	ConnectTimeout time.Duration
@@ -88,12 +84,17 @@ type Policy struct {
 	HttpStatus     int
 	TLS13Only      BoolWithDefault
 	Mode           Mode
-	NumRecords     int
-	NumSegments    int
-	OOB            BoolWithDefault
-	SendInterval   time.Duration
-	FakeTTL        int
-	FakeSleep      time.Duration
+
+	NumRecords   int
+	NumSegments  int
+	OOB          BoolWithDefault
+	SendInterval time.Duration
+
+	FakeTTL       int
+	FakeSleep     time.Duration
+	MaxTTL        int
+	Attempts      int
+	SingleTimeout time.Duration
 }
 
 func (p *Policy) UnmarshalJSON(data []byte) error {
@@ -114,6 +115,9 @@ func (p *Policy) UnmarshalJSON(data []byte) error {
 		SendInterval   *string         `json:"send_Interval"`
 		FakeTTL        *int            `json:"fake_ttl"`
 		FakeSleep      *string         `json:"fake_sleep"`
+		MaxTTL         *int            `json:"max_ttl"`
+		Attempts       *int            `json:"attempts"`
+		SingleTimeout  *string         `json:"single_timeout"`
 	}
 	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
@@ -127,13 +131,13 @@ func (p *Policy) UnmarshalJSON(data []byte) error {
 	p.OOB = tmp.OOB
 
 	if tmp.Host != nil && *tmp.Host == "" {
-		return errors.New("host cannot be a empty string")
+		return errors.New("host cannot be an empty string")
 	} else {
 		p.Host = tmp.Host
 	}
 
 	if tmp.MapTo != nil && *tmp.MapTo == "" {
-		return errors.New("map_to cannot be a empty string")
+		return errors.New("map_to cannot be an empty string")
 	} else {
 		p.MapTo = tmp.MapTo
 	}
@@ -141,7 +145,7 @@ func (p *Policy) UnmarshalJSON(data []byte) error {
 	if tmp.Port == nil {
 		p.Port = -1
 	} else if *tmp.Port < 0 || *tmp.Port > 65535 {
-		return fmt.Errorf("invalid port: %d", *tmp.Port)
+		return fmt.Errorf("port %d: outside the valid range", *tmp.Port)
 	} else {
 		p.Port = int16(*tmp.Port)
 	}
@@ -149,45 +153,59 @@ func (p *Policy) UnmarshalJSON(data []byte) error {
 	if tmp.HttpStatus == nil {
 		p.HttpStatus = -1
 	} else if *tmp.HttpStatus < 0 {
-		return fmt.Errorf("invalid http_status: %d", *tmp.HttpStatus)
+		return fmt.Errorf("http_status %d: outside the valid range", *tmp.HttpStatus)
 	} else {
 		p.HttpStatus = *tmp.HttpStatus
 	}
 
-	if tmp.NumRecords == nil {
-		p.NumRecords = 0
-	} else if *tmp.NumRecords <= 0 {
-		return fmt.Errorf("invalid num_records: %d", *tmp.NumRecords)
-	} else {
-		p.NumRecords = *tmp.NumRecords
+	if tmp.NumRecords != nil {
+		if *tmp.NumRecords <= 0 {
+			return fmt.Errorf("num_records %d: must be greater than 0", *tmp.NumRecords)
+		} else {
+			p.NumRecords = *tmp.NumRecords
+		}
 	}
 
-	if tmp.NumSegments == nil {
-		p.NumSegments = 0
-	} else if *tmp.NumSegments == 0 || *tmp.NumSegments < -1 {
-		return fmt.Errorf("invalid num_segs: %d", *tmp.NumSegments)
-	} else {
-		p.NumSegments = *tmp.NumSegments
+	if tmp.NumSegments != nil {
+		if *tmp.NumSegments == 0 || *tmp.NumSegments < -1 {
+			return fmt.Errorf("num_segs %d: outside the valid range", *tmp.NumSegments)
+		} else {
+			p.NumSegments = *tmp.NumSegments
+		}
 	}
 
 	if tmp.FakeTTL == nil {
 		p.FakeTTL = -1
-	} else if *tmp.FakeTTL < 0 {
-		return fmt.Errorf("invalid fake_ttl: %d", *tmp.FakeTTL)
+	} else if *tmp.FakeTTL < 0 || *tmp.FakeTTL > 255 {
+		return fmt.Errorf("fake_ttl %d: outside the valid range", *tmp.FakeTTL)
 	} else {
 		p.FakeTTL = *tmp.FakeTTL
 	}
 
+	if tmp.Attempts != nil {
+		if *tmp.Attempts < 1 {
+			return fmt.Errorf("Attempts %d: must be greater than 1", *tmp.Attempts)
+		} else {
+			p.Attempts = *tmp.Attempts
+		}
+	}
+
+	if tmp.MaxTTL != nil {
+		if *tmp.MaxTTL <= 1 || *tmp.MaxTTL > 255 {
+			return fmt.Errorf("max_ttl %d: outside the valid range", *tmp.MaxTTL)
+		} else {
+			p.MaxTTL = *tmp.MaxTTL
+		}
+	}
+
 	var err error
-	if tmp.ConnectTimeout == nil {
-		p.ConnectTimeout = defaultTimeout
-	} else {
+	if tmp.ConnectTimeout != nil {
 		p.ConnectTimeout, err = time.ParseDuration(*tmp.ConnectTimeout)
 		if err != nil {
 			return fmt.Errorf("parse connect_timeout %s: %w", *tmp.ConnectTimeout, err)
 		}
 		if p.ConnectTimeout <= 0 {
-			return errors.New("connect_timeout <= 0")
+			return fmt.Errorf("connect_timeout %s: must be greater than 0", *tmp.ConnectTimeout)
 		}
 	}
 
@@ -198,18 +216,28 @@ func (p *Policy) UnmarshalJSON(data []byte) error {
 		if err != nil {
 			return fmt.Errorf("parse send_interval %s: %w", *tmp.SendInterval, err)
 		}
-		if p.ConnectTimeout < 0 {
-			return errors.New("send_interval < 0")
+		if p.SendInterval < 0 {
+			return fmt.Errorf("send_interval %s: outside the valid range", *tmp.SendInterval)
 		}
 	}
 
 	if tmp.FakeSleep != nil {
 		p.FakeSleep, err = time.ParseDuration(*tmp.FakeSleep)
 		if err != nil {
-			return fmt.Errorf("parse fake_sleep %s: %w", *tmp.ConnectTimeout, err)
+			return fmt.Errorf("parse fake_sleep %s: %w", *tmp.FakeSleep, err)
 		}
-		if p.ConnectTimeout < 0 {
-			return errors.New("fake_sleep < minimum fake sleep")
+		if p.FakeSleep <= 0 {
+			return fmt.Errorf("fake_sleep %s: must be greater than 0", *tmp.FakeSleep)
+		}
+	}
+
+	if tmp.SingleTimeout != nil {
+		p.SingleTimeout, err = time.ParseDuration(*tmp.SingleTimeout)
+		if err != nil {
+			return fmt.Errorf("parse single_timeout %s: %w", *tmp.SingleTimeout, err)
+		}
+		if p.SingleTimeout <= 0 {
+			return fmt.Errorf("single_timeout %s: must be greater than 0", *tmp.SingleTimeout)
 		}
 	}
 
@@ -260,6 +288,15 @@ func (p *Policy) String() string {
 		case ModeTTLD:
 			if p.FakeTTL == 0 || p.FakeTTL == -1 {
 				fields = append(fields, "auto_fake_ttl")
+				if p.Attempts != 0 {
+					fields = append(fields, "attempts="+strconv.Itoa(p.Attempts))
+				}
+				if p.MaxTTL != 0 {
+					fields = append(fields, "max_ttl="+strconv.Itoa(p.MaxTTL))
+				}
+				if p.SingleTimeout != 0 {
+					fields = append(fields, "single_timeout="+p.SingleTimeout.String())
+				}
 			} else {
 				fields = append(fields, fmt.Sprintf("fake_ttl=%d", p.FakeTTL))
 			}
@@ -270,49 +307,65 @@ func (p *Policy) String() string {
 }
 
 func mergePolicies(policies ...Policy) *Policy {
-	var merged Policy
+	merged := Policy{
+		HttpStatus:   -1,
+		SendInterval: -1,
+		FakeTTL:      -1,
+	}
 	for _, p := range policies {
-		if p.ReplyFirst != BoolUnset {
+		if merged.ReplyFirst == BoolUnset && p.ReplyFirst != BoolUnset {
 			merged.ReplyFirst = p.ReplyFirst
 		}
-		if p.Host != nil {
+		if merged.Host == nil && p.Host != nil {
 			merged.Host = p.Host
 		}
-		if p.MapTo != nil {
+		if merged.MapTo == nil && p.MapTo != nil {
 			merged.MapTo = p.MapTo
 		}
-		if p.DNSRetry != BoolUnset {
+		if merged.DNSRetry == BoolUnset && p.DNSRetry != BoolUnset {
 			merged.DNSRetry = p.DNSRetry
 		}
-		if p.Port != 0 {
+		if merged.IPv6First == BoolUnset && p.IPv6First != BoolUnset {
+			merged.IPv6First = p.IPv6First
+		}
+		if merged.Port == 0 && p.Port != 0 {
 			merged.Port = p.Port
 		}
-		if p.HttpStatus != -1 {
+		if merged.HttpStatus == -1 && p.HttpStatus != -1 {
 			merged.HttpStatus = p.HttpStatus
 		}
-		if p.TLS13Only != BoolUnset {
+		if merged.TLS13Only == BoolUnset && p.TLS13Only != BoolUnset {
 			merged.TLS13Only = p.TLS13Only
 		}
-		if p.Mode != ModeUnknown {
+		if merged.Mode == ModeUnknown && p.Mode != ModeUnknown {
 			merged.Mode = p.Mode
 		}
-		if p.NumRecords != 0 {
+		if merged.NumRecords == 0 && p.NumRecords != 0 {
 			merged.NumRecords = p.NumRecords
 		}
-		if p.NumSegments != 0 {
+		if merged.NumSegments == 0 && p.NumSegments != 0 {
 			merged.NumSegments = p.NumSegments
 		}
-		if p.OOB != BoolUnset {
+		if merged.OOB == BoolUnset && p.OOB != BoolUnset {
 			merged.OOB = p.OOB
 		}
-		if p.SendInterval != -1 {
+		if merged.SendInterval == -1 && p.SendInterval != -1 {
 			merged.SendInterval = p.SendInterval
 		}
-		if p.FakeSleep != 0 {
+		if merged.FakeSleep == 0 && p.FakeSleep != 0 {
 			merged.FakeSleep = p.FakeSleep
 		}
-		if p.FakeTTL != -1 {
+		if merged.FakeTTL == -1 && p.FakeTTL != -1 {
 			merged.FakeTTL = p.FakeTTL
+		}
+		if merged.MaxTTL == 0 && p.MaxTTL != 0 {
+			merged.MaxTTL = p.MaxTTL
+		}
+		if merged.Attempts == 0 && p.Attempts != 0 {
+			merged.Attempts = p.Attempts
+		}
+		if merged.SingleTimeout == 0 && p.SingleTimeout != 0 {
+			merged.SingleTimeout = p.SingleTimeout
 		}
 	}
 	return &merged

@@ -1,6 +1,4 @@
 //go:build (amd64 || arm64) && linux
-// +build amd64 arm64
-// +build linux
 
 package main
 

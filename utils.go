@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -477,13 +478,13 @@ func ipRedirect(logger *log.Logger, ip string) (string, *Policy, error) {
 }
 
 func handleTunnel(
-	policy *Policy, replyFirst bool, dstConn, cliConn net.Conn, logger *log.Logger,
+	p *Policy, replyFirst bool, dstConn, cliConn net.Conn, logger *log.Logger,
 	target, originHost string, closeBoth func()) {
 	var err error
 
-	if policy.Mode == ModeRaw {
+	if p.Mode == ModeRaw {
 		if replyFirst {
-			dstConn, err = net.DialTimeout("tcp", target, policy.ConnectTimeout)
+			dstConn, err = net.DialTimeout("tcp", target, p.ConnectTimeout)
 			if err != nil {
 				logger.Println("Connection failed:", err)
 				return
@@ -540,9 +541,9 @@ func handleTunnel(
 		} else {
 			policy = mergePolicies(defaultPolicy, *policy)
 		}
-		if policy.Host != nil && *policy.Host != "" {
-			if (*policy.Host)[0] != '^' {
-				_, ipPolicy, err := ipRedirect(logger, *policy.Host)
+		if p.Host != nil && *p.Host != "" {
+			if (*p.Host)[0] != '^' {
+				_, ipPolicy, err := ipRedirect(logger, *p.Host)
 				if err != nil {
 					logger.Println("IP redirect error:", err)
 					return
@@ -552,9 +553,9 @@ func handleTunnel(
 				}
 			}
 		}
-		if policy.HttpStatus == 0 || policy.HttpStatus == -1 {
+		if p.HttpStatus == 0 || p.HttpStatus == -1 {
 			if replyFirst {
-				dstConn, err = net.DialTimeout("tcp", target, policy.ConnectTimeout)
+				dstConn, err = net.DialTimeout("tcp", target, p.ConnectTimeout)
 				if err != nil {
 					logger.Println("Connection failed:", err)
 					resp := &http.Response{
@@ -578,10 +579,10 @@ func handleTunnel(
 				return
 			}
 		} else {
-			statusLine := fmt.Sprintf("%d %s", policy.HttpStatus, http.StatusText(policy.HttpStatus))
+			statusLine := strconv.Itoa(p.HttpStatus)+http.StatusText(p.HttpStatus)
 			resp := &http.Response{
 				Status:        statusLine,
-				StatusCode:    policy.HttpStatus,
+				StatusCode:    p.HttpStatus,
 				Proto:         req.Proto,
 				ProtoMajor:    1,
 				ProtoMinor:    1,
@@ -589,11 +590,11 @@ func handleTunnel(
 				ContentLength: 0,
 				Close:         true,
 			}
-			if policy.HttpStatus == 301 || policy.HttpStatus == 302 {
+			if p.HttpStatus == 301 || p.HttpStatus == 302 {
 				resp.Header.Set("Location", "https://"+host+req.URL.RequestURI())
 			}
 			if err = resp.Write(cliConn); err != nil {
-				logger.Printf("Send %d fail: %s", policy.HttpStatus, err)
+				logger.Printf("Send %d fail: %s", p.HttpStatus, err)
 			} else {
 				logger.Println("Sent", statusLine)
 			}
@@ -611,14 +612,14 @@ func handleTunnel(
 			logger.Println("Record parsing fail:", err)
 			return
 		}
-		if policy.Mode == ModeTLSAlert {
+		if p.Mode == ModeTLSAlert {
 			// fatal access_denied
 			if err = sendTLSAlert(cliConn, prtVer, 49, 2); err != nil {
 				logger.Println("Send TLS alert fail:", err)
 			}
 			return
 		}
-		if policy.TLS13Only == BoolTrue && !hasKeyShare {
+		if p.TLS13Only == BoolTrue && !hasKeyShare {
 			logger.Println("Not a TLS 1.3 ClientHello, connection blocked")
 			// fatal protocol_version
 			if err = sendTLSAlert(cliConn, prtVer, 70, 2); err != nil {
@@ -629,7 +630,7 @@ func handleTunnel(
 		if sniPos <= 0 || sniLen <= 0 {
 			logger.Println("SNI not found")
 			if replyFirst {
-				dstConn, err = net.DialTimeout("tcp", target, policy.ConnectTimeout)
+				dstConn, err = net.DialTimeout("tcp", target, p.ConnectTimeout)
 				if err != nil {
 					logger.Println("Connection failed:", err)
 					return
@@ -658,19 +659,19 @@ func handleTunnel(
 					if err = sendTLSAlert(cliConn, prtVer, 49, 2); err != nil {
 						logger.Println("Send TLS alert fail:", err)
 					}
-					logger.Println("Connection blocked (tls-alert)")
+					logger.Println("Connection blocked by sending TLS alert")
 					return
 				}
 			}
 
 			if replyFirst {
-				dstConn, err = net.DialTimeout("tcp", target, policy.ConnectTimeout)
+				dstConn, err = net.DialTimeout("tcp", target, p.ConnectTimeout)
 				if err != nil {
 					logger.Println("Connection failed:", err)
 					return
 				}
 			}
-			switch policy.Mode {
+			switch p.Mode {
 			case ModeDirect:
 				if _, err = dstConn.Write(record); err != nil {
 					logger.Println("Send ClientHello directly fail:", err)
@@ -679,8 +680,8 @@ func handleTunnel(
 				logger.Println("Sent ClientHello directly")
 			case ModeTLSRF:
 				err = sendRecords(dstConn, record, sniPos, sniLen,
-					policy.NumRecords, policy.NumSegments,
-					policy.OOB == BoolTrue, policy.SendInterval)
+					p.NumRecords, p.NumSegments,
+					p.OOB == BoolTrue, p.SendInterval)
 				if err != nil {
 					logger.Println("TLS fragmentation fail:", err)
 					return
@@ -689,8 +690,8 @@ func handleTunnel(
 			case ModeTTLD:
 				var ttl int
 				ipv6 := target[0] == '['
-				if policy.FakeTTL == 0 || policy.FakeTTL == -1 {
-					ttl, err = minReachableTTL(target, ipv6)
+				if p.FakeTTL == 0 || p.FakeTTL == -1 {
+					ttl, err = minReachableTTL(target, ipv6, p.MaxTTL, p.Attempts, p.SingleTimeout)
 					if err != nil {
 						logger.Println("TTL probing fail:", err)
 						sendReply(logger, cliConn, 0x01)
@@ -711,13 +712,13 @@ func handleTunnel(
 					} else {
 						ttl -= 1
 					}
-					logger.Printf("Use TTL %d", ttl)
+					logger.Println("fake_ttl="+strconv.Itoa(ttl))
 				} else {
-					ttl = policy.FakeTTL
+					ttl = p.FakeTTL
 				}
 				err = desyncSend(
 					dstConn, ipv6, record,
-					sniPos, sniLen, ttl, policy.FakeSleep,
+					sniPos, sniLen, ttl, p.FakeSleep,
 				)
 				if err != nil {
 					logger.Println("TTL desync fail:", err)
@@ -729,7 +730,7 @@ func handleTunnel(
 	default:
 		logger.Println("Unknown packet type")
 		if replyFirst {
-			dstConn, err = net.DialTimeout("tcp", target, policy.ConnectTimeout)
+			dstConn, err = net.DialTimeout("tcp", target, p.ConnectTimeout)
 			if err != nil {
 				logger.Println("Connection failed:", err)
 				return
@@ -752,7 +753,7 @@ func handleTunnel(
 	<-done
 }
 
-func genPolicy(logger *log.Logger, originHost string) (dstHost string, policy *Policy, fail bool, block bool) {
+func genPolicy(logger *log.Logger, originHost string) (dstHost string, p *Policy, fail bool, block bool) {
 	var err error
 
 	if net.ParseIP(originHost) != nil {
@@ -763,33 +764,33 @@ func genPolicy(logger *log.Logger, originHost string) (dstHost string, policy *P
 			return "", nil, true, false
 		}
 		if ipPolicy == nil {
-			policy = &defaultPolicy
+			p = &defaultPolicy
 		} else {
-			policy = mergePolicies(defaultPolicy, *ipPolicy)
+			p = mergePolicies(defaultPolicy, *ipPolicy)
 		}
-		if policy.Mode == ModeBlock {
+		if p.Mode == ModeBlock {
 			return "", nil, false, true
 		}
 	} else {
 		domainPolicy := domainMatcher.Find(originHost)
 		found := domainPolicy != nil
 		if found {
-			policy = mergePolicies(defaultPolicy, *domainPolicy)
+			p = mergePolicies(defaultPolicy, *domainPolicy)
 		} else {
-			policy = &defaultPolicy
+			p = &defaultPolicy
 		}
-		if policy.Mode == ModeBlock {
+		if p.Mode == ModeBlock {
 			return "", nil, false, true
 		}
 		var disableRedirect bool
-		if policy.Host == nil || *policy.Host == "" {
+		if p.Host == nil || *p.Host == "" {
 			var first uint16
-			if policy.IPv6First == BoolTrue {
+			if p.IPv6First == BoolTrue {
 				first = dns.TypeAAAA
 			} else {
 				first = dns.TypeA
 			}
-			if policy.DNSRetry == BoolTrue {
+			if p.DNSRetry == BoolTrue {
 				var second uint16
 				if first == dns.TypeA {
 					second = dns.TypeAAAA
@@ -812,11 +813,11 @@ func genPolicy(logger *log.Logger, originHost string) (dstHost string, policy *P
 				logger.Printf("DNS: %s -> %s", originHost, dstHost)
 			}
 		} else {
-			disableRedirect = (*policy.Host)[0] == '^'
+			disableRedirect = (*p.Host)[0] == '^'
 			if disableRedirect {
-				dstHost = (*policy.Host)[1:]
+				dstHost = (*p.Host)[1:]
 			} else {
-				dstHost = *policy.Host
+				dstHost = *p.Host
 			}
 		}
 		if !disableRedirect {
@@ -828,11 +829,11 @@ func genPolicy(logger *log.Logger, originHost string) (dstHost string, policy *P
 			}
 			if ipPolicy != nil {
 				if found {
-					policy = mergePolicies(defaultPolicy, *ipPolicy, *domainPolicy)
+					p = mergePolicies(defaultPolicy, *ipPolicy, *domainPolicy)
 				} else {
-					policy = mergePolicies(defaultPolicy, *ipPolicy)
+					p = mergePolicies(defaultPolicy, *ipPolicy)
 				}
-				if policy.Mode == ModeBlock {
+				if p.Mode == ModeBlock {
 					return "", nil, false, true
 				}
 			}

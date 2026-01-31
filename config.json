@@ -11,7 +11,7 @@
     "transmit_file_limit": 2,
     "default_policy": {
         "reply_first": false,
-        "ipv6_first": true,
+        "ipv6_first": false,
         "dns_retry": false,
         "connect_timeout": "10s",
         "http_status": 0,
@@ -22,7 +22,10 @@
         "oob": true,
         "send_interval": "0s",
         "fake_ttl": 0,
-        "fake_sleep": "200ms"
+        "fake_sleep": "200ms",
+        "attempts": 2,
+        "max_ttl": 32,
+        "single_timeout": "500ms"
     },
     "ip_policies": {
         "(104.16|172.64).0.0/13;104.24.0.0/14;162.158.0.0/15;188.114.96.0/20;66.235.200.0/24;8.6.112.0;8.47.69.0": {
