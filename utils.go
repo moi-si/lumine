@@ -711,7 +711,7 @@ func handleTunnel(
 					} else {
 						ttl -= 1
 					}
-					logger.Printf("fake_ttl=%d", ttl)
+					logger.Printf("Use TTL %d", ttl)
 				} else {
 					ttl = policy.FakeTTL
 				}
@@ -799,17 +799,17 @@ func genPolicy(logger *log.Logger, originHost string) (dstHost string, policy *P
 				var err1, err2 error
 				dstHost, err1, err2 = doubleQuery(originHost, first, second)
 				if err2 != nil {
-					logger.Printf("DNS %s fail: %s, %s", originHost, err1, err2)
+					logger.Printf("Resolve %s fail: (%s, %s)", originHost, err1, err2)
 					return "", nil, true, false
 				}
 			} else {
 				var err error
 				dstHost, err = dnsQuery(originHost, first)
 				if err != nil {
-					logger.Printf("DNS %s fail: %s", originHost, err)
+					logger.Printf("Resolve %s fail: %s", originHost, err)
 					return "", nil, true, false
 				}
-				logger.Printf("DNS %s -> %s", originHost, dstHost)
+				logger.Printf("DNS: %s -> %s", originHost, dstHost)
 			}
 		} else {
 			disableRedirect = (*policy.Host)[0] == '^'
@@ -831,6 +831,9 @@ func genPolicy(logger *log.Logger, originHost string) (dstHost string, policy *P
 					policy = mergePolicies(defaultPolicy, *ipPolicy, *domainPolicy)
 				} else {
 					policy = mergePolicies(defaultPolicy, *ipPolicy)
+				}
+				if policy.Mode == ModeBlock {
+					return "", nil, false, true
 				}
 			}
 		}

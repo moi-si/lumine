@@ -11,6 +11,7 @@
     "transmit_file_limit": 2,
     "default_policy": {
         "reply_first": false,
+        "ipv6_first": true,
         "dns_retry": false,
         "connect_timeout": "10s",
         "http_status": 0,
