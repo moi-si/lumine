@@ -184,7 +184,7 @@ func (p *Policy) UnmarshalJSON(data []byte) error {
 
 	if tmp.Attempts != nil {
 		if *tmp.Attempts < 1 {
-			return fmt.Errorf("Attempts %d: must be greater than 1", *tmp.Attempts)
+			return fmt.Errorf("attempts %d: must be greater than 1", *tmp.Attempts)
 		} else {
 			p.Attempts = *tmp.Attempts
 		}

@@ -4,7 +4,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"net"
 	"sync"
 	"syscall"
@@ -72,8 +71,6 @@ func minReachableTTL(addr string, ipv6 bool, maxTTL, attempts int, dialTimeout t
 				conn.Close()
 				ok = true
 				break
-			} else {
-				log.Println(err)
 			}
 		}
 		if ok {
