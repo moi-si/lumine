@@ -539,7 +539,7 @@ func handleTunnel(
 		if policy == nil {
 			policy = &defaultPolicy
 		} else {
-			policy = mergePolicies(defaultPolicy, *policy)
+			policy = mergePolicies(*policy, defaultPolicy)
 		}
 		if p.Host != nil && *p.Host != "" {
 			if (*p.Host)[0] != '^' {
@@ -549,7 +549,7 @@ func handleTunnel(
 					return
 				}
 				if ipPolicy != nil {
-					policy = mergePolicies(defaultPolicy, *ipPolicy, *policy)
+					policy = mergePolicies(*policy, *ipPolicy, defaultPolicy)
 				}
 			}
 		}
@@ -649,7 +649,7 @@ func handleTunnel(
 				if domainPolicy == nil {
 					domainPolicy = &defaultPolicy
 				} else {
-					domainPolicy = mergePolicies(defaultPolicy, *domainPolicy)
+					domainPolicy = mergePolicies(*domainPolicy, defaultPolicy)
 				}
 				switch domainPolicy.Mode {
 				case ModeBlock:
@@ -766,7 +766,7 @@ func genPolicy(logger *log.Logger, originHost string) (dstHost string, p *Policy
 		if ipPolicy == nil {
 			p = &defaultPolicy
 		} else {
-			p = mergePolicies(defaultPolicy, *ipPolicy)
+			p = mergePolicies(*ipPolicy, defaultPolicy)
 		}
 		if p.Mode == ModeBlock {
 			return "", nil, false, true
@@ -775,7 +775,7 @@ func genPolicy(logger *log.Logger, originHost string) (dstHost string, p *Policy
 		domainPolicy := domainMatcher.Find(originHost)
 		found := domainPolicy != nil
 		if found {
-			p = mergePolicies(defaultPolicy, *domainPolicy)
+			p = mergePolicies(*domainPolicy, defaultPolicy)
 		} else {
 			p = &defaultPolicy
 		}
@@ -829,9 +829,9 @@ func genPolicy(logger *log.Logger, originHost string) (dstHost string, p *Policy
 			}
 			if ipPolicy != nil {
 				if found {
-					p = mergePolicies(defaultPolicy, *ipPolicy, *domainPolicy)
+					p = mergePolicies(*domainPolicy, *ipPolicy, defaultPolicy)
 				} else {
-					p = mergePolicies(defaultPolicy, *ipPolicy)
+					p = mergePolicies(*ipPolicy, defaultPolicy)
 				}
 				if p.Mode == ModeBlock {
 					return "", nil, false, true

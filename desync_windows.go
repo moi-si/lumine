@@ -257,9 +257,6 @@ func desyncSend(
 	} else {
 		fakeData = make([]byte, cut)
 		copy(fakeData, firstPacket[:sniPos])
-		for i := sniPos; i < cut; i++ {
-			fakeData[i] = 0x00
-		}
 	}
 
 	err = sendFakeData(

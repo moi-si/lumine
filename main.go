@@ -174,7 +174,7 @@ func handleSOCKS5(clientConn net.Conn, id uint32) {
 		if ipPolicy == nil {
 			policy = &defaultPolicy
 		} else {
-			policy = mergePolicies(defaultPolicy, *ipPolicy)
+			policy = mergePolicies(*ipPolicy, defaultPolicy)
 		}
 	case 0x04: // IPv6 address
 		ipBytes, err := readN(clientConn, 16)
@@ -193,7 +193,7 @@ func handleSOCKS5(clientConn net.Conn, id uint32) {
 		if ipPolicy == nil {
 			policy = &defaultPolicy
 		} else {
-			policy = mergePolicies(defaultPolicy, *ipPolicy)
+			policy = mergePolicies(*ipPolicy, defaultPolicy)
 		}
 	case 0x03: // Domain name
 		lenByte, err := readN(clientConn, 1)
