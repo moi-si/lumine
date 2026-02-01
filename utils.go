@@ -579,7 +579,7 @@ func handleTunnel(
 				return
 			}
 		} else {
-			statusLine := strconv.Itoa(p.HttpStatus)+http.StatusText(p.HttpStatus)
+			statusLine := strconv.Itoa(p.HttpStatus) + " " + http.StatusText(p.HttpStatus)
 			resp := &http.Response{
 				Status:        statusLine,
 				StatusCode:    p.HttpStatus,
@@ -712,7 +712,7 @@ func handleTunnel(
 					} else {
 						ttl -= 1
 					}
-					logger.Println("fake_ttl="+strconv.Itoa(ttl))
+					logger.Println("fake_ttl=" + strconv.Itoa(ttl))
 				} else {
 					ttl = p.FakeTTL
 				}
