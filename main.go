@@ -14,7 +14,7 @@ import (
 
 func main() {
 	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "moi-si/lumine v0.2.2")
+		fmt.Fprintln(os.Stderr, "moi-si/lumine v0.3.0")
 		fmt.Fprintln(os.Stderr)
 		flag.PrintDefaults()
 	}

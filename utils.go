@@ -441,7 +441,7 @@ func getRawConn(conn net.Conn) (syscall.RawConn, error) {
 
 func ipRedirect(logger *log.Logger, ip string) (string, *Policy, error) {
 	for range maxJump {
-		policy := matchIP(ip)
+		policy := getIPPolicy(ip)
 		if policy == nil {
 			return ip, nil, nil
 		}
@@ -472,7 +472,7 @@ func ipRedirect(logger *log.Logger, ip string) (string, *Policy, error) {
 			ip = mapTo
 			continue
 		}
-		return mapTo, matchIP(mapTo), nil
+		return mapTo, getIPPolicy(mapTo), nil
 	}
 	return "", nil, errors.New("too many redirects")
 }
@@ -507,7 +507,7 @@ func handleTunnel(
 	}
 
 	br := bufio.NewReader(cliConn)
-	peekBytes, err := br.Peek(5)
+	peekBytes, err := br.Peek(1)
 	if err != nil {
 		if errors.Is(err, io.EOF) {
 			logger.Println("Empty tunnel")
@@ -681,7 +681,8 @@ func handleTunnel(
 			case ModeTLSRF:
 				err = sendRecords(dstConn, record, sniPos, sniLen,
 					p.NumRecords, p.NumSegments,
-					p.OOB == BoolTrue, p.SendInterval)
+					p.OOB == BoolTrue, p.ModMinorVer == BoolTrue,
+					p.SendInterval)
 				if err != nil {
 					logger.Println("TLS fragmentation fail:", err)
 					return
@@ -840,27 +841,4 @@ func genPolicy(logger *log.Logger, originHost string) (dstHost string, p *Policy
 		}
 	}
 	return
-}
-
-type BoolWithDefault uint8
-
-const (
-	BoolUnset BoolWithDefault = iota
-	BoolFalse
-	BoolTrue
-)
-
-func (b *BoolWithDefault) UnmarshalJSON(data []byte) error {
-	s := string(data)
-	switch s {
-	case "null":
-		*b = BoolUnset
-	case "false":
-		*b = BoolFalse
-	case "true":
-		*b = BoolTrue
-	default:
-		return fmt.Errorf("Invalid bool: %s", s)
-	}
-	return nil
 }
