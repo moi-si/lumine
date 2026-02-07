@@ -8,7 +8,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"sync"
 	"syscall"
 	"time"
 
@@ -16,24 +15,11 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-const minInterval = 100 * time.Millisecond
-
-var (
-	ttlCacheEnabled bool
-	ttlCache        sync.Map
-	ttlCacheTTL     int
-)
-
-type ttlCacheValue struct {
-	TTL      int
-	ExpireAt time.Time
-}
-
 func minReachableTTL(addr string, ipv6 bool, maxTTL, attempts int, dialTimeout time.Duration) (int, error) {
 	if ttlCacheEnabled {
 		v, ok := ttlCache.Load(addr)
 		if ok {
-			k := v.(ttlCacheValue)
+			k := v.(ttlCacheEntry)
 			if !k.ExpireAt.IsZero() {
 				if time.Now().Before(k.ExpireAt) {
 					return k.TTL, nil
@@ -91,7 +77,7 @@ func minReachableTTL(addr string, ipv6 bool, maxTTL, attempts int, dialTimeout t
 		} else {
 			expireAt = time.Now().Add(time.Duration(ttlCacheTTL * int(time.Second)))
 		}
-		ttlCache.Store(addr, ttlCacheValue{
+		ttlCache.Store(addr, ttlCacheEntry{
 			TTL:      found,
 			ExpireAt: expireAt,
 		})

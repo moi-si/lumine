@@ -2,38 +2,22 @@ package main
 
 import (
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"net"
 	"time"
 )
 
 func sendRecords(conn net.Conn, data []byte,
-	offset, length, numRcd, numSeg int,
+	offset, _, numRcd, numSeg int,
 	oob, modMinorVer bool, interval time.Duration) error {
-	if len(data) < 5 {
-		return errors.New("data too short")
-	}
-	if numRcd <= 0 {
-		return errors.New("invalid numRcd")
-	}
-	if numSeg != 1 && numSeg != -1 && numSeg <= 0 {
-		return errors.New("invalid numSeg")
-	}
-	if length < 4 {
-		return errors.New("invalid length")
-	}
-
 	header := data[:3]
 	if modMinorVer {
 		header[2] = 0x04
 	}
-	offset -= 5
-	cut := offset + 1 + 2
 
+	cut := offset - 5 + 1 + 2
 	rightChunks := numRcd / 2
 	leftChunks := numRcd - rightChunks
-
 	chunks := make([][]byte, 0, numRcd)
 	splitAndAppend(data[5:cut], header, leftChunks, &chunks)
 	splitAndAppend(data[cut:], header, rightChunks, &chunks)

@@ -5,25 +5,11 @@ package main
 import (
 	"fmt"
 	"net"
-	"sync"
 	"syscall"
 	"time"
 
 	"golang.org/x/sys/unix"
 )
-
-const minInterval = 100 * time.Millisecond
-
-var (
-	ttlCacheEnabled bool
-	ttlCache        sync.Map
-	ttlCacheTTL     int
-)
-
-type ttlCacheEntry struct {
-	TTL      int
-	ExpireAt time.Time
-}
 
 func minReachableTTL(addr string, ipv6 bool, maxTTL, attempts int, dialTimeout time.Duration) (int, error) {
 	if ttlCacheEnabled {
