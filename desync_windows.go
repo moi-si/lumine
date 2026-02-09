@@ -17,6 +17,9 @@ import (
 
 func minReachableTTL(addr string, ipv6 bool, maxTTL, attempts int, dialTimeout time.Duration) (int, error) {
 	if ttlCacheEnabled {
+		lock := getLock(addr)
+		lock.Lock()
+		defer lock.Unlock()
 		v, ok := ttlCache.Load(addr)
 		if ok {
 			k := v.(ttlCacheEntry)
