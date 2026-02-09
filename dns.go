@@ -28,9 +28,6 @@ type dnsCacheEntry struct {
 
 func do53Query(domain string, qtype uint16) (string, bool, error) {
 	if dnsCacheEnabled {
-		lock := getLock(domain)
-		lock.Lock()
-		defer lock.Unlock()
 		v, ok := dnsCache.Load(domain)
 		if ok {
 			k := v.(dnsCacheEntry)
@@ -90,9 +87,6 @@ loop:
 
 func dohQuery(domain string, qtype uint16) (string, bool, error) {
 	if dnsCacheEnabled {
-		lock := getLock(domain)
-		lock.Lock()
-		defer lock.Unlock()
 		v, ok := dnsCache.Load(domain)
 		if ok {
 			k := v.(dnsCacheEntry)

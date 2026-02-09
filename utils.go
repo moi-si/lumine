@@ -12,17 +12,9 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/miekg/dns"
 )
-
-var keyLocks sync.Map
-
-func getLock(key string) *sync.Mutex {
-	l, _ := keyLocks.LoadOrStore(key, &sync.Mutex{})
-	return l.(*sync.Mutex)
-}
 
 func parseClientHello(data []byte) (prtVer []byte, sniPos int, sniLen int, hasKeyShare bool, err error) {
 	const (
