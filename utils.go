@@ -204,7 +204,7 @@ func transformIP(ipStr string, targetNetStr string) (string, error) {
 	}
 	_, targetNet, err := net.ParseCIDR(targetNetStr)
 	if err != nil {
-		return "", fmt.Errorf("invalid target network: %v", err)
+		return "", fmt.Errorf("invalid target network: %w", err)
 	}
 
 	isIPv4 := ip.To4() != nil
@@ -274,21 +274,22 @@ var (
 	dnsCacheTTL     int
 )
 
-type dnsCacheValue struct {
+type dnsCacheEntry struct {
 	IP       string
 	ExpireAt time.Time
 }
 
 func do53Query(domain string, qtype uint16) (string, error) {
 	if dnsCacheEnabled {
-		v, ok := ttlCache.Load(domain)
+		v, ok := dnsCache.Load(domain)
 		if ok {
-			k := v.(dnsCacheValue)
+			k := v.(dnsCacheEntry)
 			if !k.ExpireAt.IsZero() {
 				if time.Now().Before(k.ExpireAt) {
+					log.Println(domain, k.IP)
 					return k.IP, nil
 				} else {
-					ttlCache.Delete(domain)
+					dnsCache.Delete(domain)
 				}
 			}
 		}
@@ -330,7 +331,7 @@ loop:
 			} else {
 				expireAt = time.Now().Add(time.Duration(dnsCacheTTL * int(time.Second)))
 			}
-			dnsCache.Store(domain, dnsCacheValue{
+			dnsCache.Store(domain, dnsCacheEntry{
 				IP:       ip,
 				ExpireAt: expireAt,
 			})
@@ -341,14 +342,14 @@ loop:
 
 func dohQuery(domain string, qtype uint16) (string, error) {
 	if dnsCacheEnabled {
-		v, ok := ttlCache.Load(domain)
+		v, ok := dnsCache.Load(domain)
 		if ok {
-			k := v.(dnsCacheValue)
+			k := v.(dnsCacheEntry)
 			if !k.ExpireAt.IsZero() {
 				if time.Now().Before(k.ExpireAt) {
 					return k.IP, nil
 				} else {
-					ttlCache.Delete(domain)
+					dnsCache.Delete(domain)
 				}
 			}
 		}
@@ -413,7 +414,7 @@ loop:
 			} else {
 				expireAt = time.Now().Add(time.Duration(dnsCacheTTL * int(time.Second)))
 			}
-			dnsCache.Store(domain, dnsCacheValue{
+			dnsCache.Store(domain, dnsCacheEntry{
 				IP:       ip,
 				ExpireAt: expireAt,
 			})
