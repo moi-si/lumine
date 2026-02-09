@@ -114,25 +114,25 @@ func sendFakeData(
 
 	err = unix.SetsockoptInt(int(fd), level, opt, fakeTTL)
 	if err != nil {
-		return fmt.Errorf("set fake ttl: %s", err)
+		return fmt.Errorf("set fake ttl: %w", err)
 	}
 	iov := unix.Iovec{
 		Base: &data[0],
 		Len:  toUint(len(fakeData)),
 	}
 	if _, err := unix.Vmsplice(pipeW, []unix.Iovec{iov}, unix.SPLICE_F_GIFT); err != nil {
-		return fmt.Errorf("vmsplice: %s", err)
+		return fmt.Errorf("vmsplice: %w", err)
 	}
 	if _, err := unix.Splice(pipeR, nil, fd, nil, len(fakeData), 0); err != nil {
-		return fmt.Errorf("splice: %s", err)
+		return fmt.Errorf("splice: %w", err)
 	}
 	time.Sleep(fakeSleep)
 
-	copy(data, realData)
+	copy(data, realData) // will be automatically sent by the system.
 
 	err = unix.SetsockoptInt(int(fd), level, opt, defaultTTL)
 	if err != nil {
-		return fmt.Errorf("set default ttl: %s", err)
+		return fmt.Errorf("set default ttl: %w", err)
 	}
 	return nil
 }
@@ -143,7 +143,7 @@ func desyncSend(
 ) error {
 	rawConn, err := getRawConn(conn)
 	if err != nil {
-		return fmt.Errorf("get rawConn: %s", err)
+		return fmt.Errorf("get rawConn: %w", err)
 	}
 	var fd int
 	err = rawConn.Control(func(fileDesc uintptr) {
@@ -163,7 +163,7 @@ func desyncSend(
 	}
 	defaultTTL, err = unix.GetsockoptInt(fd, level, opt)
 	if err != nil {
-		return fmt.Errorf("get default ttl: %s", err)
+		return fmt.Errorf("get default ttl: %w", err)
 	}
 
 	if fakeSleep < minInterval {
@@ -196,7 +196,7 @@ func desyncSend(
 		fakeSleep,
 	)
 	if err != nil {
-		return fmt.Errorf("first sending: %s", err)
+		return fmt.Errorf("first sending: %w", err)
 	}
 	/*err = sendFakeData(
 		fd,
@@ -208,7 +208,7 @@ func desyncSend(
 		fakeSleep,
 	)*/
 	if _, err = conn.Write(firstPacket[cut:]); err != nil {
-		return fmt.Errorf("second sending: %s", err)
+		return fmt.Errorf("second sending: %w", err)
 	}
 	return nil
 }

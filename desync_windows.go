@@ -114,21 +114,21 @@ func sendFakeData(
 	)
 	defer windows.CloseHandle(fileHandle)
 	if err != nil {
-		return fmt.Errorf("create file: %v", err)
+		return fmt.Errorf("create file: %w", err)
 	}
 
 	var ov windows.Overlapped
 	eventHandle, err := windows.CreateEvent(nil, 1, 0, nil)
 	defer windows.CloseHandle(eventHandle)
 	if err != nil {
-		return fmt.Errorf("create event: %v", err)
+		return fmt.Errorf("create event: %w", err)
 	}
 	ov.HEvent = eventHandle
 
 	var zero *int32
 	_, err = windows.SetFilePointer(fileHandle, 0, zero, 0)
 	if err != nil {
-		return fmt.Errorf("set file pointer: %v", err)
+		return fmt.Errorf("set file pointer: %w", err)
 	}
 	err = windows.WriteFile(
 		fileHandle,
@@ -137,19 +137,19 @@ func sendFakeData(
 		&ov,
 	)
 	if err != nil {
-		return fmt.Errorf("write fake data: %v", err)
+		return fmt.Errorf("write fake data: %w", err)
 	}
 	if err = windows.SetEndOfFile(fileHandle); err != nil {
-		return fmt.Errorf("set end of file: %v", err)
+		return fmt.Errorf("set end of file: %w", err)
 	}
 	err = windows.SetsockoptInt(sockHandle, level, opt, fakeTTL)
 	if err != nil {
-		return fmt.Errorf("set fake TTL: %v", err)
+		return fmt.Errorf("set fake TTL: %w", err)
 	}
 
 	_, err = windows.SetFilePointer(fileHandle, 0, zero, 0)
 	if err != nil {
-		return fmt.Errorf("set file pointer: %v", err)
+		return fmt.Errorf("set file pointer: %w", err)
 	}
 	if sem != nil {
 		sem <- struct{}{}
@@ -167,31 +167,31 @@ func sendFakeData(
 	time.Sleep(time.Duration(fakeSleep))
 
 	if _, err = windows.SetFilePointer(fileHandle, 0, zero, 0); err != nil {
-		return fmt.Errorf("set file pointer: %v", err)
+		return fmt.Errorf("set file pointer: %w", err)
 	}
 	err = windows.WriteFile(
 		fileHandle,
-		realData,
+		realData, // will be automatically sent by the system.
 		nil,
 		&ov,
 	)
 	if err != nil {
-		return fmt.Errorf("write real data: %v", err)
+		return fmt.Errorf("write real data to temp: %w", err)
 	}
 	if err = windows.SetEndOfFile(fileHandle); err != nil {
-		return fmt.Errorf("set end of file: %v", err)
+		return fmt.Errorf("set end of file: %w", err)
 	}
 	_, err = windows.SetFilePointer(fileHandle, 0, zero, 0)
 	if err != nil {
-		return fmt.Errorf("set file pointer: %v", err)
+		return fmt.Errorf("set file pointer: %w", err)
 	}
 	if err = windows.SetsockoptInt(sockHandle, level, opt, defaultTTL); err != nil {
-		return fmt.Errorf("set default TTL: %v", err)
+		return fmt.Errorf("set default TTL: %w", err)
 	}
 
 	val, err := windows.WaitForSingleObject(ov.HEvent, 5000)
 	if err != nil {
-		return fmt.Errorf("TransmitFile call failed on waiting for event: %v", err)
+		return fmt.Errorf("TransmitFile call failed on waiting for event: %w", err)
 	}
 	if val != 0 {
 		return errors.New("TransmitFile call failed")
