@@ -5,7 +5,6 @@ package main
 import (
 	"errors"
 	"net"
-	"sync"
 	"time"
 )
 
@@ -13,7 +12,6 @@ var errUnsupported = errors.New("not supported yet")
 
 var (
 	ttlCacheEnabled bool
-	ttlCache        sync.Map
 	ttlCacheTTL     int
 )
 
