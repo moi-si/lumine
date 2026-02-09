@@ -14,7 +14,7 @@
         "ipv6_first": false,
         "dns_retry": false,
         "connect_timeout": "10s",
-        "tls13_only": true,
+        "tls13_only": false,
         "http_status": 0,
         "mode": "tls-rf",
         "num_records": 4,
@@ -99,13 +99,10 @@
             "host": "199.232.137.164"
         },
         "*(google.com|google.com.hk|gmail.com|google.dev|googleapis.com|gstatic.com|googleusercontent.com|.google|goo.gl|translate.goog|android.com|ai.dev|blogger.com|blogspot.com|blogblog.com|chrome.com|chromium.org|golang.org|youtube.com|youtu.be|youtube-nocookie.com|.ytimg.com|.ggpht.com|gvt1.com|withgoogle.com|googlesource.com)": {
-            "host": "172.253.139.90"
+            "host": "142.251.119.90"
         },
         "*.googlevideo.com": {
             "ipv6_first": true
-        },
-        "client2.google.com": {
-            "http_status": 403
         },
         "*telegram.(org|me);t.me": {
             "host": "149.154.161.145"
@@ -125,7 +122,7 @@
         "*(ooni.org|solana.com|vercel.app|sambanova.ai)": {
             "mode": "ttl-d"
         },
-        "*webnode.jp;*webnode.com": {
+        "*webnode.(jp|com)": {
             "mode": "raw"
         },
         "onedrive.live.com": {
@@ -146,7 +143,7 @@
         "ocsp-certum.com;ocsp.sectigo.com;ocsp.digicert.c(om|n);ocsps.ssl.com;*amazontrust.com;ocsp.comodoca.com;o.pki.goog;safebrowsing.googleapis.com;dl.google.com;chomium.org": {
             "mode": "raw"
         },
-        "imp.pixiv.net;nav-edge.smartscreen.microsoft.com;collector.github.com;ads.nicovideo.jp;browser.events.data.msn.cn": {
+        "imp.pixiv.net;nav-edge.smartscreen.microsoft.com;collector.github.com;*ads.nicovideo.jp;browser.events.data.msn.cn": {
             "mode": "block"
         }
     }
