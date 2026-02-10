@@ -25,11 +25,11 @@ func sendRecords(conn net.Conn, data []byte,
 	if numSeg == -1 {
 		for i, chunk := range chunks {
 			if _, err := conn.Write(chunk); err != nil {
-				return fmt.Errorf("write record %d: %s", i+1, err)
+				return fmt.Errorf("write record %d: %w", i+1, err)
 			}
 			if i == 0 && oob {
 				if err := sendOOB(conn); err != nil {
-					return fmt.Errorf("oob: %s", err)
+					return fmt.Errorf("oob: %w", err)
 				}
 			}
 			if interval > 0 {

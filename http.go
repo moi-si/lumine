@@ -21,8 +21,7 @@ const (
 
 var httpConnID uint32
 
-func httpAccept(addr *string, serverAddr string, done chan struct{}) {
-	defer func() { done <- struct{}{} }()
+func httpAccept(addr *string, serverAddr string) {
 	var listenAddr string
 	if *addr == "" {
 		listenAddr = serverAddr

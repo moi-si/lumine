@@ -24,7 +24,7 @@ type Config struct {
 	DNSAddr           string            `json:"dns_addr"`
 	UDPSize           uint16            `json:"udp_minsize"`
 	DoHProxy          string            `json:"socks5_for_doh"`
-	MaxJump           uint8             `json:"max_jump"`
+	MaxJump           int               `json:"max_jump"`
 	FakeTTLRules      string            `json:"fake_ttl_rules"`
 	DNSCacheTTL       int               `json:"dns_cache_ttl"`
 	TTLCacheTTL       int               `json:"ttl_cache_ttl"`
@@ -37,7 +37,7 @@ var (
 	defaultPolicy Policy
 	sem           chan struct{}
 	dnsAddr       string
-	maxJump       uint8
+	maxJump       int
 	calcTTL       func(int) (int, error)
 	domainMatcher *addrtrie.DomainMatcher[Policy]
 	ipMatcher     *addrtrie.BitTrie[Policy]
@@ -159,7 +159,7 @@ func loadConfig(filePath string) (string, string, error) {
 
 	dnsAddr = conf.DNSAddr
 	if strings.HasPrefix(dnsAddr, "https://") {
-		dnsQuery = dohQuery
+		dnsExchange = dohExchange
 		if conf.DoHProxy == "" {
 			httpCli = new(http.Client)
 		} else {
@@ -174,7 +174,7 @@ func loadConfig(filePath string) (string, string, error) {
 			httpCli = &http.Client{Transport: transport}
 		}
 	} else {
-		dnsQuery = do53Query
+		dnsExchange = do53Exchange
 		if conf.UDPSize == 0 {
 			dnsClient = new(dns.Client)
 		} else {
@@ -190,7 +190,7 @@ func loadConfig(filePath string) (string, string, error) {
 		dnsCacheTTL = conf.DNSCacheTTL
 	}
 
-	if conf.MaxJump == 0 {
+	if conf.MaxJump <= 0 {
 		maxJump = 20
 	} else {
 		maxJump = conf.MaxJump
@@ -207,7 +207,7 @@ func loadConfig(filePath string) (string, string, error) {
 	if conf.FakeTTLRules != "" {
 		err = loadFakeTTLRules(conf.FakeTTLRules)
 		if err != nil {
-			return "", "", fmt.Errorf("load fake ttl rules: %s", err)
+			return "", "", fmt.Errorf("load fake ttl rules: %w", err)
 		}
 		if runtime.GOOS == "windows" && conf.TransmitFileLimit > 0 {
 			sem = make(chan struct{}, conf.TransmitFileLimit)

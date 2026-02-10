@@ -9,6 +9,8 @@ import (
 	"time"
 )
 
+const unsetInt = -1
+
 type Mode uint8
 
 const (
@@ -19,6 +21,7 @@ const (
 	ModeTTLD
 	ModeBlock
 	ModeTLSAlert
+	ModeDefault = ModeTLSRF
 )
 
 func (m *Mode) UnmarshalJSON(data []byte) error {
@@ -45,29 +48,6 @@ func (m *Mode) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-type BoolWithDefault uint8
-
-const (
-	BoolUnset BoolWithDefault = iota
-	BoolFalse
-	BoolTrue
-)
-
-func (b *BoolWithDefault) UnmarshalJSON(data []byte) error {
-	s := string(data)
-	switch s {
-	case "null":
-		*b = BoolUnset
-	case "false":
-		*b = BoolFalse
-	case "true":
-		*b = BoolTrue
-	default:
-		return fmt.Errorf("Invalid bool: %s", s)
-	}
-	return nil
-}
-
 func (m Mode) String() string {
 	switch m {
 	case ModeRaw:
@@ -86,14 +66,36 @@ func (m Mode) String() string {
 	return "unknown"
 }
 
+type BoolWithDefault uint8
+
+const (
+	BoolUnset BoolWithDefault = iota
+	BoolFalse
+	BoolTrue
+)
+
+func (b *BoolWithDefault) UnmarshalJSON(data []byte) error {
+	s := string(data)
+	switch s {
+	case "null":
+		*b = BoolUnset
+	case "false":
+		*b = BoolFalse
+	case "true":
+		*b = BoolTrue
+	default:
+		return fmt.Errorf("invalid bool: %s", s)
+	}
+	return nil
+}
+
 type Policy struct {
 	ReplyFirst     BoolWithDefault
+	DNSMode        DNSMode
 	ConnectTimeout time.Duration
 	Host           *string
 	MapTo          *string
 	Port           int16
-	DNSRetry       BoolWithDefault
-	IPv6First      BoolWithDefault
 	HttpStatus     int
 	TLS13Only      BoolWithDefault
 	Mode           Mode
@@ -118,8 +120,7 @@ func (p *Policy) UnmarshalJSON(data []byte) error {
 		Host           *string         `json:"host"`
 		MapTo          *string         `json:"map_to"`
 		Port           *int            `json:"port"`
-		DNSRetry       BoolWithDefault `json:"dns_retry"`
-		IPv6First      BoolWithDefault `json:"ipv6_first"`
+		DNSMode        DNSMode         `json:"dns_mode"`
 		HttpStatus     *int            `json:"http_status"`
 		TLS13Only      BoolWithDefault `json:"tls13_only"`
 		Mode           Mode            `json:"mode"`
@@ -127,7 +128,7 @@ func (p *Policy) UnmarshalJSON(data []byte) error {
 		NumSegments    *int            `json:"num_segs"`
 		OOB            BoolWithDefault `json:"oob"`
 		ModMinorVer    BoolWithDefault `json:"mod_minor_ver"`
-		SendInterval   *string         `json:"send_Interval"`
+		SendInterval   *string         `json:"send_interval"`
 		FakeTTL        *int            `json:"fake_ttl"`
 		FakeSleep      *string         `json:"fake_sleep"`
 		MaxTTL         *int            `json:"max_ttl"`
@@ -139,10 +140,9 @@ func (p *Policy) UnmarshalJSON(data []byte) error {
 	}
 
 	p.ReplyFirst = tmp.ReplyFirst
-	p.DNSRetry = tmp.DNSRetry
-	p.IPv6First = tmp.IPv6First
 	p.TLS13Only = tmp.TLS13Only
 	p.Mode = tmp.Mode
+	p.DNSMode = tmp.DNSMode
 	p.OOB = tmp.OOB
 	p.ModMinorVer = tmp.ModMinorVer
 
@@ -159,7 +159,7 @@ func (p *Policy) UnmarshalJSON(data []byte) error {
 	}
 
 	if tmp.Port == nil {
-		p.Port = -1
+		p.Port = unsetInt
 	} else if *tmp.Port < 0 || *tmp.Port > 65535 {
 		return fmt.Errorf("port %d: outside the valid range", *tmp.Port)
 	} else {
@@ -167,7 +167,7 @@ func (p *Policy) UnmarshalJSON(data []byte) error {
 	}
 
 	if tmp.HttpStatus == nil {
-		p.HttpStatus = -1
+		p.HttpStatus = unsetInt
 	} else if *tmp.HttpStatus < 0 {
 		return fmt.Errorf("http_status %d: outside the valid range", *tmp.HttpStatus)
 	} else {
@@ -191,7 +191,7 @@ func (p *Policy) UnmarshalJSON(data []byte) error {
 	}
 
 	if tmp.FakeTTL == nil {
-		p.FakeTTL = -1
+		p.FakeTTL = unsetInt
 	} else if *tmp.FakeTTL < 0 || *tmp.FakeTTL > 255 {
 		return fmt.Errorf("fake_ttl %d: outside the valid range", *tmp.FakeTTL)
 	} else {
@@ -215,7 +215,9 @@ func (p *Policy) UnmarshalJSON(data []byte) error {
 	}
 
 	var err error
-	if tmp.ConnectTimeout != nil {
+	if tmp.ConnectTimeout == nil {
+		p.ConnectTimeout = unsetInt
+	} else {
 		p.ConnectTimeout, err = time.ParseDuration(*tmp.ConnectTimeout)
 		if err != nil {
 			return fmt.Errorf("parse connect_timeout %s: %w", *tmp.ConnectTimeout, err)
@@ -226,7 +228,7 @@ func (p *Policy) UnmarshalJSON(data []byte) error {
 	}
 
 	if tmp.SendInterval == nil {
-		p.SendInterval = -1
+		p.SendInterval = unsetInt
 	} else {
 		p.SendInterval, err = time.ParseDuration(*tmp.SendInterval)
 		if err != nil {
@@ -269,17 +271,13 @@ func (p *Policy) String() string {
 	if p.Host != nil && *p.Host != "" {
 		addr += *p.Host
 	}
-	if p.Port != -1 && p.Port != 0 {
-		addr += fmt.Sprintf(":%d", p.Port)
+	if p.Port != unsetInt && p.Port != 0 {
+		addr += ":" + strconv.FormatInt(int64(p.Port), 10)
 	}
 	if addr != "" {
 		fields = append(fields, addr)
-	}
-	if p.IPv6First == BoolTrue {
-		fields = append(fields, "ipv6_first")
-	}
-	if p.DNSRetry == BoolTrue {
-		fields = append(fields, "resolve_retry")
+	} else {
+		fields = append(fields, p.DNSMode.String())
 	}
 	if p.HttpStatus > 0 {
 		fields = append(fields, "http_status="+strconv.Itoa(p.HttpStatus))
@@ -287,53 +285,55 @@ func (p *Policy) String() string {
 	if p.TLS13Only == BoolTrue {
 		fields = append(fields, "tls13_only")
 	}
-	if p.Mode != ModeUnknown {
-		fields = append(fields, p.Mode.String())
-		switch p.Mode {
-		case ModeTLSRF:
-			fields = append(fields, fmt.Sprintf("%d records", p.NumRecords))
-			if p.NumSegments != -1 && p.NumSegments != 1 {
-				fields = append(fields, fmt.Sprintf("%d segments", p.NumSegments))
-			}
-			if p.NumSegments != 1 && p.SendInterval > 0 {
-				fields = append(fields, "send_interval="+p.SendInterval.String())
-			}
-			if p.OOB == BoolTrue {
-				fields = append(fields, "oob")
-			}
-			if p.ModMinorVer == BoolTrue {
-				fields = append(fields, "mod_minor_ver")
-			}
-		case ModeTTLD:
-			if p.FakeTTL == 0 || p.FakeTTL == -1 {
-				fields = append(fields, "auto_fake_ttl")
-				if p.Attempts != 0 {
-					fields = append(fields, "attempts="+strconv.Itoa(p.Attempts))
-				}
-				if p.MaxTTL != 0 {
-					fields = append(fields, "max_ttl="+strconv.Itoa(p.MaxTTL))
-				}
-				if p.SingleTimeout != 0 {
-					fields = append(fields, "single_timeout="+p.SingleTimeout.String())
-				}
-			} else {
-				fields = append(fields, fmt.Sprintf("fake_ttl=%d", p.FakeTTL))
-			}
-			fields = append(fields, "fake_sleep="+p.FakeSleep.String())
+	fields = append(fields, p.Mode.String())
+	switch p.Mode {
+	case ModeTLSRF:
+		fields = append(fields, fmt.Sprintf("%d records", p.NumRecords))
+		if p.NumSegments != unsetInt && p.NumSegments != 1 {
+			fields = append(fields, fmt.Sprintf("%d segments", p.NumSegments))
 		}
+		if p.NumSegments != 1 && p.SendInterval > 0 {
+			fields = append(fields, "send_interval="+p.SendInterval.String())
+		}
+		if p.OOB == BoolTrue {
+			fields = append(fields, "oob")
+		}
+		if p.ModMinorVer == BoolTrue {
+			fields = append(fields, "mod_minor_ver")
+		}
+	case ModeTTLD:
+		if p.FakeTTL == 0 || p.FakeTTL == unsetInt {
+			fields = append(fields, "auto_fake_ttl")
+			if p.Attempts != 0 {
+				fields = append(fields, "attempts="+strconv.Itoa(p.Attempts))
+			}
+			if p.MaxTTL != 0 {
+				fields = append(fields, "max_ttl="+strconv.Itoa(p.MaxTTL))
+			}
+			if p.SingleTimeout != 0 {
+				fields = append(fields, "single_timeout="+p.SingleTimeout.String())
+			}
+		} else {
+			fields = append(fields, fmt.Sprintf("fake_ttl=%d", p.FakeTTL))
+		}
+		fields = append(fields, "fake_sleep="+p.FakeSleep.String())
 	}
 	return strings.Join(fields, " | ")
 }
 
-func mergePolicies(policies ...Policy) *Policy {
+func mergePolicies(policies ...*Policy) *Policy {
 	merged := Policy{
-		HttpStatus:   -1,
-		SendInterval: -1,
-		FakeTTL:      -1,
+		HttpStatus:     unsetInt,
+		SendInterval:   unsetInt,
+		FakeTTL:        unsetInt,
+		ConnectTimeout: unsetInt,
 	}
 	for _, p := range policies {
 		if merged.ReplyFirst == BoolUnset && p.ReplyFirst != BoolUnset {
 			merged.ReplyFirst = p.ReplyFirst
+		}
+		if merged.ConnectTimeout == unsetInt && p.ConnectTimeout != unsetInt {
+			merged.ConnectTimeout = p.ConnectTimeout
 		}
 		if merged.Host == nil && p.Host != nil {
 			merged.Host = p.Host
@@ -341,16 +341,10 @@ func mergePolicies(policies ...Policy) *Policy {
 		if merged.MapTo == nil && p.MapTo != nil {
 			merged.MapTo = p.MapTo
 		}
-		if merged.DNSRetry == BoolUnset && p.DNSRetry != BoolUnset {
-			merged.DNSRetry = p.DNSRetry
-		}
-		if merged.IPv6First == BoolUnset && p.IPv6First != BoolUnset {
-			merged.IPv6First = p.IPv6First
-		}
 		if merged.Port == 0 && p.Port != 0 {
 			merged.Port = p.Port
 		}
-		if merged.HttpStatus == -1 && p.HttpStatus != -1 {
+		if merged.HttpStatus == unsetInt && p.HttpStatus != unsetInt {
 			merged.HttpStatus = p.HttpStatus
 		}
 		if merged.TLS13Only == BoolUnset && p.TLS13Only != BoolUnset {
@@ -358,6 +352,9 @@ func mergePolicies(policies ...Policy) *Policy {
 		}
 		if merged.Mode == ModeUnknown && p.Mode != ModeUnknown {
 			merged.Mode = p.Mode
+		}
+		if merged.DNSMode == DNSModeUnknown && p.DNSMode != DNSModeUnknown {
+			merged.DNSMode = p.DNSMode
 		}
 		if merged.NumRecords == 0 && p.NumRecords != 0 {
 			merged.NumRecords = p.NumRecords
@@ -371,13 +368,13 @@ func mergePolicies(policies ...Policy) *Policy {
 		if merged.ModMinorVer == BoolUnset && p.ModMinorVer != BoolUnset {
 			merged.ModMinorVer = p.ModMinorVer
 		}
-		if merged.SendInterval == -1 && p.SendInterval != -1 {
+		if merged.SendInterval == unsetInt && p.SendInterval != unsetInt {
 			merged.SendInterval = p.SendInterval
 		}
 		if merged.FakeSleep == 0 && p.FakeSleep != 0 {
 			merged.FakeSleep = p.FakeSleep
 		}
-		if merged.FakeTTL == -1 && p.FakeTTL != -1 {
+		if merged.FakeTTL == unsetInt && p.FakeTTL != unsetInt {
 			merged.FakeTTL = p.FakeTTL
 		}
 		if merged.MaxTTL == 0 && p.MaxTTL != 0 {
@@ -389,6 +386,12 @@ func mergePolicies(policies ...Policy) *Policy {
 		if merged.SingleTimeout == 0 && p.SingleTimeout != 0 {
 			merged.SingleTimeout = p.SingleTimeout
 		}
+	}
+	if merged.Mode == ModeUnknown {
+		merged.Mode = ModeDefault
+	}
+	if merged.DNSMode == DNSModeUnknown {
+		merged.DNSMode = DNSModeDefault
 	}
 	return &merged
 }

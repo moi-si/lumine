@@ -12,8 +12,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-
-	"github.com/miekg/dns"
 )
 
 func parseClientHello(data []byte) (prtVer []byte, sniPos int, sniLen int, hasKeyShare bool, err error) {
@@ -313,18 +311,14 @@ func handleTunnel(
 				return
 			}
 		}
-		done := make(chan struct{}, 2)
+		done := make(chan struct{})
 		go func() {
 			io.Copy(dstConn, cliConn)
 			closeBoth()
 			done <- struct{}{}
 		}()
-		go func() {
-			io.Copy(cliConn, dstConn)
-			closeBoth()
-			done <- struct{}{}
-		}()
-		<-done
+		io.Copy(cliConn, dstConn)
+		closeBoth()
 		<-done
 		return
 	}
@@ -362,7 +356,7 @@ func handleTunnel(
 		if policy == nil {
 			policy = &defaultPolicy
 		} else {
-			policy = mergePolicies(*policy, defaultPolicy)
+			policy = mergePolicies(policy, &defaultPolicy)
 		}
 		if p.Host != nil && *p.Host != "" {
 			if (*p.Host)[0] != '^' {
@@ -372,7 +366,7 @@ func handleTunnel(
 					return
 				}
 				if ipPolicy != nil {
-					policy = mergePolicies(*policy, *ipPolicy, defaultPolicy)
+					policy = mergePolicies(policy, ipPolicy, &defaultPolicy)
 				}
 			}
 		}
@@ -472,7 +466,7 @@ func handleTunnel(
 				if domainPolicy == nil {
 					domainPolicy = &defaultPolicy
 				} else {
-					domainPolicy = mergePolicies(*domainPolicy, defaultPolicy)
+					domainPolicy = mergePolicies(domainPolicy, &defaultPolicy)
 				}
 				switch domainPolicy.Mode {
 				case ModeBlock:
@@ -515,7 +509,8 @@ func handleTunnel(
 				var ttl int
 				ipv6 := target[0] == '['
 				if p.FakeTTL == 0 || p.FakeTTL == -1 {
-					ttl, err = minReachableTTL(target, ipv6, p.MaxTTL, p.Attempts, p.SingleTimeout)
+					var cached bool
+					ttl, cached, err = minReachableTTL(target, ipv6, p.MaxTTL, p.Attempts, p.SingleTimeout)
 					if err != nil {
 						logger.Println("TTL probing fail:", err)
 						sendReply(logger, cliConn, 0x01)
@@ -536,7 +531,11 @@ func handleTunnel(
 					} else {
 						ttl -= 1
 					}
-					logger.Println("fake_ttl=" + strconv.Itoa(ttl))
+					if cached {
+						logger.Println("Fake TTL(cache): " + strconv.Itoa(ttl))
+					} else {
+						logger.Println("Fake TTL: " + strconv.Itoa(ttl))
+					}
 				} else {
 					ttl = p.FakeTTL
 				}
@@ -590,7 +589,7 @@ func genPolicy(logger *log.Logger, originHost string) (dstHost string, p *Policy
 		if ipPolicy == nil {
 			p = &defaultPolicy
 		} else {
-			p = mergePolicies(*ipPolicy, defaultPolicy)
+			p = mergePolicies(ipPolicy, &defaultPolicy)
 		}
 		if p.Mode == ModeBlock {
 			return "", nil, false, true
@@ -599,44 +598,26 @@ func genPolicy(logger *log.Logger, originHost string) (dstHost string, p *Policy
 		domainPolicy := domainMatcher.Find(originHost)
 		found := domainPolicy != nil
 		if found {
-			p = mergePolicies(*domainPolicy, defaultPolicy)
+			if domainPolicy.Mode == ModeBlock {
+				return "", nil, false, true
+			}
+			p = mergePolicies(domainPolicy, &defaultPolicy)
 		} else {
 			p = &defaultPolicy
 		}
-		if p.Mode == ModeBlock {
-			return "", nil, false, true
-		}
 		var disableRedirect, cached bool
 		if p.Host == nil || *p.Host == "" {
-			var first uint16
-			if p.IPv6First == BoolTrue {
-				first = dns.TypeAAAA
-			} else {
-				first = dns.TypeA
-			}
-			if p.DNSRetry == BoolTrue {
-				var second uint16
-				if first == dns.TypeA {
-					second = dns.TypeAAAA
+			dstHost, cached, err = dnsResolve(originHost, p.DNSMode)
+			if err != nil {
+				if cached {
+					logger.Println("Resolve", originHost, "fail(cached):", err)
 				} else {
-					second = dns.TypeA
+					logger.Println("Resolve", originHost, "fail:", err)
 				}
-				var err1, err2 error
-				dstHost, cached, err1, err2 = doubleQuery(originHost, first, second)
-				if err2 != nil {
-					logger.Printf("Resolve %s fail: (%s, %s)", originHost, err1, err2)
-					return "", nil, true, false
-				}
-			} else {
-				var err error
-				dstHost, cached, err = dnsQuery(originHost, first)
-				if err != nil {
-					logger.Printf("Resolve %s fail: %s", originHost, err)
-					return "", nil, true, false
-				}
+				return "", nil, true, block
 			}
 			if cached {
-				logger.Println("DNS(cache):", originHost, "->", dstHost)
+				logger.Println("DNS(cached):", originHost, "->", dstHost)
 			} else {
 				logger.Println("DNS:", originHost, "->", dstHost)
 			}
@@ -657,9 +638,9 @@ func genPolicy(logger *log.Logger, originHost string) (dstHost string, p *Policy
 			}
 			if ipPolicy != nil {
 				if found {
-					p = mergePolicies(*domainPolicy, *ipPolicy, defaultPolicy)
+					p = mergePolicies(domainPolicy, ipPolicy, &defaultPolicy)
 				} else {
-					p = mergePolicies(*ipPolicy, defaultPolicy)
+					p = mergePolicies(ipPolicy, &defaultPolicy)
 				}
 				if p.Mode == ModeBlock {
 					return "", nil, false, true
