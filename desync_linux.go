@@ -11,14 +11,14 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func minReachableTTL(addr string, ipv6 bool, maxTTL, attempts int, dialTimeout time.Duration) (int, error) {
+func minReachableTTL(addr string, ipv6 bool, maxTTL, attempts int, dialTimeout time.Duration) (int, bool, error) {
 	if ttlCacheEnabled {
 		v, ok := ttlCache.Load(addr)
 		if ok {
 			k := v.(ttlCacheEntry)
 			if !k.ExpireAt.IsZero() {
 				if time.Now().Before(k.ExpireAt) {
-					return k.TTL, nil
+					return k.TTL, true, nil
 				} else {
 					ttlCache.Delete(addr)
 				}
@@ -80,7 +80,7 @@ func minReachableTTL(addr string, ipv6 bool, maxTTL, attempts int, dialTimeout t
 		})
 	}
 
-	return found, nil
+	return found, false, nil
 }
 
 func sendFakeData(

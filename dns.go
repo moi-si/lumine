@@ -67,20 +67,9 @@ var (
 	dnsCacheTTL     int
 )
 
-type recordStatus uint8
-
-const (
-	recordExists recordStatus = iota
-	recordNotFound
-	aRecordNotFound
-	aaaaRecordNotFound
-	nxDomain
-)
-
 type dnsCacheEntry struct {
-	RecordStatus recordStatus
-	IP           string
-	ExpireAt     time.Time
+	IP       string
+	ExpireAt time.Time
 }
 
 func do53Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
@@ -144,12 +133,6 @@ func dnsResolve(domain string, dnsMode DNSMode) (ip string, cached bool, err err
 			k := v.(dnsCacheEntry)
 			if !k.ExpireAt.IsZero() {
 				if time.Now().Before(k.ExpireAt) {
-					switch k.RecordStatus {
-					case recordNotFound:
-						return "", true, errors.New("record not found")
-					case nxDomain:
-						return "", true, errors.New("bad rcode: " + dns.RcodeToString[dns.RcodeNameError])
-					}
 					return k.IP, true, nil
 				} else {
 					dnsCache.Delete(domain)
@@ -165,62 +148,58 @@ func dnsResolve(domain string, dnsMode DNSMode) (ip string, cached bool, err err
 	case DNSModePreferIPv6, DNSModeIPv6Only:
 		msg.SetQuestion(domain+".", dns.TypeAAAA)
 	}
+
 	resp, err := dnsExchange(msg)
 	if err != nil {
 		return "", false, fmt.Errorf("dns exchange: %w", err)
 	}
-
-	var entry dnsCacheEntry
-	switch resp.Rcode {
-	case dns.RcodeSuccess:
-		switch dnsMode {
-		case DNSModeIPv4Only:
-			ip = pickFirstARecord(resp.Answer)
-			if ip == "" {
-				err = errors.New("A record not found")
-				entry.RecordStatus = aRecordNotFound
-			}
-		case DNSModeIPv6Only:
-			ip = pickFirstAAAARecord(resp.Answer)
-			if ip == "" {
-				err = errors.New("AAAA record not found")
-				entry.RecordStatus = aaaaRecordNotFound
-			}
-		case DNSModePreferIPv4:
-			ip = pickFirstARecord(resp.Answer)
-			if ip == "" {
-				msg.SetQuestion(domain+".", dns.TypeAAAA)
-				resp, err2 := dnsExchange(msg)
-				if err2 != nil {
-					return "", false, fmt.Errorf("dns exchange: %w; %w", err, err2)
-				}
-				ip = pickFirstAAAARecord(resp.Answer)
-				if ip == "" {
-					err = errors.New("record not found")
-				}
-			}
-		case DNSModePreferIPv6:
-			ip = pickFirstAAAARecord(resp.Answer)
-			if ip == "" {
-				msg.SetQuestion(domain+".", dns.TypeA)
-				resp, err2 := dnsExchange(msg)
-				if err2 != nil {
-					return "", false, fmt.Errorf("dns exchange: %w; %w", err, err2)
-				}
-				ip = pickFirstARecord(resp.Answer)
-				if ip == "" {
-					err = errors.New("record not found")
-				}
-			}
-		}
-		if err != nil {
-			entry.RecordStatus = recordNotFound
-		}
-	case dns.RcodeBadName:
-		entry.RecordStatus = nxDomain
-		err = errors.New("bad rcode: " + dns.RcodeToString[resp.Rcode])
-	default:
+	if resp.Rcode != dns.RcodeSuccess {
 		return "", false, errors.New("bad rcode: " + dns.RcodeToString[resp.Rcode])
+	}
+
+	switch dnsMode {
+	case DNSModeIPv4Only:
+		ip = pickFirstARecord(resp.Answer)
+		if ip == "" {
+			return "", false, errors.New("A record not found")
+		}
+	case DNSModeIPv6Only:
+		ip = pickFirstAAAARecord(resp.Answer)
+		if ip == "" {
+			return "", false, errors.New("AAAA record not found")
+		}
+	case DNSModePreferIPv4:
+		ip = pickFirstARecord(resp.Answer)
+		if ip == "" {
+			msg.SetQuestion(domain+".", dns.TypeAAAA)
+			resp, err2 := dnsExchange(msg)
+			if err2 != nil {
+				return "", false, fmt.Errorf("dns exchange: %w; %w", err, err2)
+			}
+			if resp.Rcode != dns.RcodeSuccess {
+				return "", false, fmt.Errorf("bad rcode: %s", dns.RcodeToString[resp.Rcode])
+			}
+			ip = pickFirstAAAARecord(resp.Answer)
+			if ip == "" {
+				return "", false, errors.New("record not found")
+			}
+		}
+	case DNSModePreferIPv6:
+		ip = pickFirstAAAARecord(resp.Answer)
+		if ip == "" {
+			msg.SetQuestion(domain+".", dns.TypeA)
+			resp, err2 := dnsExchange(msg)
+			if err2 != nil {
+				return "", false, fmt.Errorf("dns exchange: %w; %w", err, err2)
+			}
+			if resp.Rcode != dns.RcodeSuccess {
+				return "", false, fmt.Errorf("bad rcode: %s", dns.RcodeToString[resp.Rcode])
+			}
+			ip = pickFirstARecord(resp.Answer)
+			if ip == "" {
+				return "", false, errors.New("record not found")
+			}
+		}
 	}
 
 	if dnsCacheEnabled {
@@ -230,9 +209,10 @@ func dnsResolve(domain string, dnsMode DNSMode) (ip string, cached bool, err err
 		} else {
 			expireAt = time.Now().Add(time.Duration(dnsCacheTTL) * time.Second)
 		}
-		entry.IP = ip
-		entry.ExpireAt = expireAt
-		dnsCache.Store(domain, entry)
+		dnsCache.Store(domain, dnsCacheEntry{
+			IP:       ip,
+			ExpireAt: expireAt,
+		})
 	}
 	return
 }
