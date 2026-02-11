@@ -5,7 +5,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"os"
 	"path/filepath"
@@ -38,7 +37,6 @@ func minReachableTTL(addr string, ipv6 bool, maxTTL, attempts int, dialTimeout t
 		level, opt = windows.IPPROTO_IP, windows.IP_TTL
 	}
 	dialer := net.Dialer{Timeout: dialTimeout}
-	log.Println(dialTimeout)
 
 	low, high := 1, maxTTL
 	found := -1

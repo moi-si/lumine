@@ -253,7 +253,6 @@ func (p *Policy) UnmarshalJSON(data []byte) error {
 		p.SingleTimeout = unsetInt
 	} else {
 		p.SingleTimeout, err = time.ParseDuration(*tmp.SingleTimeout)
-		println(*tmp.SingleTimeout)
 		if err != nil {
 			return fmt.Errorf("parse single_timeout %s: %w", *tmp.SingleTimeout, err)
 		}
