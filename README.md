@@ -1,5 +1,5 @@
 # lumine
-A lightweight local HTTP/SOCKS5 proxy server that protects TLS connections over TCP, based on [TlsFragment](https://github.com/maoist2009/TlsFragment).
+A lightweight local HTTP/SOCKS5 proxy server that protects TLS connections over TCP.
 
 ## Installation
 
@@ -28,29 +28,31 @@ Field|Description|Example|Special Values
 `fake_ttl_rules`|TTL calculation rules for fake packets|`"0-1;3=3;5-1;8-2;13-3;20=18"`|Empty string disables TTL rules
 `transmit_file_limit`|Maximum concurrent TransmitFile operations|`2`|`0` or negative means no limit (unrestricted concurrency)
 `dns_cache_ttl`|How long a DNS answer is kept in the in‑memory cache (seconds)|`259200`|`-1` → cache forever; `0` → disable DNS caching entirely
-`fake_ttl_cache_ttl`|How long a minimum reachable TTL is kept in the in‑memory cache (seconds)|`259200`|`-1` → cache forever; `0` → disable TTL caching entirely
+`ttl_cache_ttl`|How long a minimum reachable TTL is kept in the in‑memory cache (seconds)|`259200`|`-1` → cache forever; `0` → disable TTL caching entirely
 `default_policy`|Default policy applied to all connections|See Policy fields below|-
 `domain_policy`|Domain-specific policies|See Policy fields below|-
 `ip_policy`|IP/CIDR-specific policies|See Policy fields below|-
 ### Policy Fields
 Field|Description|Example|Special Values
 -|-|-|-
+`dns_mode`|Selects the DNS query strategy, determining which record type is requested and whether a fallback to the other type is performed|`prefer_ipv4`, `prefer_ipv6`, `ipv4_only`, `ipv6_only`|-
 `connect_timeout`|Maximum time to wait for a connection to be established|`"10s"`|-
 `reply_first`|Send SOCKS5 reply SUCCESS before connecting|`true`|-
-`host`|Override target host|`"^208.103.161.2"`, `"www.ietf.org"`|Prefix `^` disables IP redirection
+`host`|Override target host|`"^208.103.161.2"`, `"www.visa.cn"`|Prefix `^` disables IP redirection
 `map_to`|Redirect IP to another host/CIDR|`"35.180.16.12"`, `"^www.fbi.org"`|Prefix `^` disables chain jump
 `port`|Override target port|`8443`|`0` uses original port
-`dns_retry`|Enable dual DNS query (A+AAAA)|`false`|-
-`ipv6_first`|Prefer IPv6 over IPv4 resolution|`false`|-
 `http_status`|HTTP status code to return instead of forwarding|`301`|`0` means forward normally
 `tls13_only`|Restrict to TLS 1.3 only|`true`|-
 `mode`|Traffic manipulation mode|`"tls-rf"`|See Mode Values below
 `num_records`|Number of TLS records for fragmentation|`10`|`1` disables fragmentation
 `num_segs`|Number of segments for TCP fragmentation|`3`|`1` disables segment splitting; when `-1`, send 1 record each time
-`oob`|Attach Out-Of-Band (OOB) data to the end of the first TCP segment|`true`|-
+`oob`|Attach Out-Of-Band (OOB) data to the end of the first TCP packet|`true`|-
 `send_interval`|Interval between sending segments|`"200ms"`|`0s` means no delay
 `fake_ttl`|TTL value for fake packets in `ttl-d` mode|`17`|`0` enables auto TTL detection
 `fake_sleep`|Sleep time after sending fake packet|`"200ms"`|-
+`attempts`|Number of connection attempts the resolver makes for each tested TTL value when probing the minimum reachable TTL|`2`|-
+`max_ttl`|Upper bound of the TTL range (in hops) that will be searched; the algorithm performs a binary‑search between 1 and this value|`64`|-
+`single_timeout`|Per‑attempt TCP dial timeout used while testing each TTL candidate|`"500ms"`|-
 ### Mode  Values
 Mode|Description|Used For
 -|-|-
@@ -61,6 +63,12 @@ Mode|Description|Used For
 `block`|Block connection entirely|Connection termination
 `tls-alert`|Send TLS alert and terminate connection|TLS connection termination
 
-## License
+# Acknowledgements
 
-GPL-3.0
+The technique in this project was originally taken from the Python tool [TlsFragment](https://github.com/maoist2009/TlsFragment).
+
+We rewrote the whole implementation in Go, and ended up with a faster, more feature‑rich version whose configuration file looks similar to – but is not compatible with - the original.
+
+# License
+
+GPLv3
