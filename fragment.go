@@ -8,21 +8,44 @@ import (
 )
 
 func sendRecords(conn net.Conn, data []byte,
-	offset, _, numRcd, numSeg int,
+	offset, _, records, segments int,
 	oob, modMinorVer bool, interval time.Duration) error {
-	header := data[:3]
 	if modMinorVer {
-		header[2] = 0x04
+		data[2] = 0x04
 	}
 
+	if records == 1 && segments > 1 {
+		rightSegments := segments / 2
+		leftSegments := segments - rightSegments
+		packets := make([][]byte, 0, segments)
+		cut := offset + 2
+		splitAndAppend(data[:cut], nil, leftSegments, &packets)
+		splitAndAppend(data[cut:], nil, rightSegments, &packets)
+		for i, packet := range packets {
+			if _, err := conn.Write(packet); err != nil {
+				return fmt.Errorf("write packet %d: %w", i+1, err)
+			}
+			if i == 0 && oob {
+				if err := sendOOB(conn); err != nil {
+					return fmt.Errorf("oob: %w", err)
+				}
+			}
+			if interval > 0 {
+				time.Sleep(interval)
+			}
+		}
+		return nil
+	}
+
+	rightChunks := records / 2
+	leftChunks := records - rightChunks
+	chunks := make([][]byte, 0, records)
 	cut := offset - 5 + 1 + 2
-	rightChunks := numRcd / 2
-	leftChunks := numRcd - rightChunks
-	chunks := make([][]byte, 0, numRcd)
+	header := data[:3]
 	splitAndAppend(data[5:cut], header, leftChunks, &chunks)
 	splitAndAppend(data[cut:], header, rightChunks, &chunks)
 
-	if numSeg == -1 {
+	if segments == -1 {
 		for i, chunk := range chunks {
 			if _, err := conn.Write(chunk); err != nil {
 				return fmt.Errorf("write record %d: %w", i+1, err)
@@ -48,16 +71,16 @@ func sendRecords(conn net.Conn, data []byte,
 		merged = append(merged, c...)
 	}
 
-	if numSeg == 1 || len(merged) <= numSeg {
+	if segments == 1 || len(merged) <= segments {
 		_, err := conn.Write(merged)
 		return err
 	}
 
-	base := len(merged) / numSeg
-	for i := range numSeg {
+	base := len(merged) / segments
+	for i := range segments {
 		start := i * base
 		end := start + base
-		if i == numSeg-1 {
+		if i == segments-1 {
 			end = len(merged)
 		}
 		if _, err := conn.Write(merged[start:end]); err != nil {
@@ -79,8 +102,13 @@ func splitAndAppend(data, header []byte, n int, result *[][]byte) {
 	if n <= 0 {
 		return
 	}
+	addHeader := header != nil
 	if n == 1 || len(data) < n {
-		*result = append(*result, makeRecord(header, data))
+		if addHeader {
+			*result = append(*result, makeRecord(header, data))
+		} else {
+			*result = append(*result, data)
+		}
 		return
 	}
 	base := len(data) / n
@@ -91,7 +119,11 @@ func splitAndAppend(data, header []byte, n int, result *[][]byte) {
 		} else {
 			part = data[i*base : (i+1)*base]
 		}
-		*result = append(*result, makeRecord(header, part))
+		if addHeader {
+			*result = append(*result, makeRecord(header, part))
+		} else {
+			*result = append(*result, part)
+		}
 	}
 }
 

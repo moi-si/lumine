@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 func parseClientHello(data []byte) (prtVer []byte, sniPos int, sniLen int, hasKeyShare bool, err error) {
@@ -277,7 +278,7 @@ func ipRedirect(logger *log.Logger, ip string) (string, *Policy, error) {
 		} else {
 			chain = true
 		}
-		if strings.Contains(mapTo, "/") {
+		if strings.LastIndexByte(mapTo, '/') != -1 {
 			var err error
 			mapTo, err = transformIP(ip, mapTo)
 			if err != nil {
@@ -287,7 +288,7 @@ func ipRedirect(logger *log.Logger, ip string) (string, *Policy, error) {
 		if ip == mapTo {
 			return ip, policy, nil
 		}
-		logger.Printf("Redirect %s to %s", ip, mapTo)
+		logger.Println("Redirect:", ip, "->", mapTo)
 
 		if chain {
 			ip = mapTo
@@ -299,7 +300,7 @@ func ipRedirect(logger *log.Logger, ip string) (string, *Policy, error) {
 }
 
 func handleTunnel(
-	p *Policy, replyFirst bool, dstConn, cliConn net.Conn, logger *log.Logger,
+	p Policy, replyFirst bool, dstConn, cliConn net.Conn, logger *log.Logger,
 	target, originHost string, closeBoth func()) {
 	var err error
 
@@ -313,20 +314,24 @@ func handleTunnel(
 		}
 		done := make(chan struct{})
 		go func() {
-			io.Copy(dstConn, cliConn)
+			if _, err := io.Copy(dstConn, cliConn); err != nil && !strings.Contains(err.Error(), "use of closed") {
+				logger.Println("Copy dest -> client:", err)
+			}
 			closeBoth()
 			done <- struct{}{}
 		}()
-		io.Copy(cliConn, dstConn)
+		if _, err := io.Copy(cliConn, dstConn); err != nil && !strings.Contains(err.Error(), "use of closed") {
+			logger.Println("Copy client -> dest:", err)
+		}
 		closeBoth()
 		<-done
 		return
 	}
 
 	br := bufio.NewReader(cliConn)
-	peekBytes, err := br.Peek(1)
+	peekBytes, err := br.Peek(5)
 	if err != nil {
-		if errors.Is(err, io.EOF) {
+		if len(peekBytes) == 0 && errors.Is(err, io.EOF) {
 			logger.Println("Empty tunnel")
 		} else {
 			logger.Println("Read first packet fail:", err)
@@ -352,13 +357,14 @@ func handleTunnel(
 		}
 		logger.Printf("%s %s to %s", req.Method, req.URL, host)
 
-		policy := domainMatcher.Find(host)
-		if policy == nil {
-			policy = &defaultPolicy
+		var policy Policy
+		domainPolicy := domainMatcher.Find(host)
+		if domainPolicy == nil {
+			policy = defaultPolicy
 		} else {
-			policy = mergePolicies(policy, &defaultPolicy)
+			policy = mergePolicies(&policy, &defaultPolicy)
 		}
-		if p.Host != nil && *p.Host != "" {
+		if policy.Host != nil && *policy.Host != "" {
 			if (*p.Host)[0] != '^' {
 				_, ipPolicy, err := ipRedirect(logger, *p.Host)
 				if err != nil {
@@ -366,7 +372,7 @@ func handleTunnel(
 					return
 				}
 				if ipPolicy != nil {
-					policy = mergePolicies(policy, ipPolicy, &defaultPolicy)
+					policy = mergePolicies(&policy, ipPolicy, &defaultPolicy)
 				}
 			}
 		}
@@ -457,18 +463,19 @@ func handleTunnel(
 				logger.Println("Send ClientHello directly fail:", err)
 				return
 			}
-			logger.Println("Sent ClientHello directly")
+			logger.Println("ClientHello sent directly")
 		} else {
 			sniStr := string(record[sniPos : sniPos+sniLen])
 			if originHost != sniStr {
 				logger.Println("Server name:", sniStr)
+				var sniPolicy Policy
 				domainPolicy := domainMatcher.Find(sniStr)
 				if domainPolicy == nil {
-					domainPolicy = &defaultPolicy
+					sniPolicy = defaultPolicy
 				} else {
-					domainPolicy = mergePolicies(domainPolicy, &defaultPolicy)
+					sniPolicy = mergePolicies(domainPolicy, &defaultPolicy)
 				}
-				switch domainPolicy.Mode {
+				switch sniPolicy.Mode {
 				case ModeBlock:
 					logger.Println("Connection blocked")
 					return
@@ -491,20 +498,20 @@ func handleTunnel(
 			switch p.Mode {
 			case ModeDirect:
 				if _, err = dstConn.Write(record); err != nil {
-					logger.Println("Send ClientHello directly fail:", err)
+					logger.Println("ClientHello sending directly fail:", err)
 					return
 				}
-				logger.Println("Sent ClientHello directly")
+				logger.Println("ClientHello sent directly")
 			case ModeTLSRF:
 				err = sendRecords(dstConn, record, sniPos, sniLen,
 					p.NumRecords, p.NumSegments,
 					p.OOB == BoolTrue, p.ModMinorVer == BoolTrue,
 					p.SendInterval)
 				if err != nil {
-					logger.Println("TLS fragmentation fail:", err)
+					logger.Println("TLSRF fail:", err)
 					return
 				}
-				logger.Println("Successfully sent ClientHello")
+				logger.Println("ClientHello sent")
 			case ModeTTLD:
 				var ttl int
 				ipv6 := target[0] == '['
@@ -544,10 +551,10 @@ func handleTunnel(
 					sniPos, sniLen, ttl, p.FakeSleep,
 				)
 				if err != nil {
-					logger.Println("TTL desync fail:", err)
+					logger.Println("TTLD fail:", err)
 					return
 				}
-				logger.Println("Successfully sent ClientHello")
+				logger.Println("ClientHello sent")
 			}
 		}
 	default:
@@ -563,20 +570,21 @@ func handleTunnel(
 
 	done := make(chan struct{})
 	go func() {
-		io.Copy(dstConn, cliConn)
+		if _, err := io.Copy(dstConn, cliConn); err != nil && !strings.Contains(err.Error(), "use of closed") {
+			logger.Println("Copy dest -> client:", err)
+		}
 		closeBoth()
 		done <- struct{}{}
 	}()
-	go func() {
-		io.Copy(cliConn, dstConn)
-		closeBoth()
-		done <- struct{}{}
-	}()
-	<-done
+	if _, err := io.Copy(cliConn, dstConn); err != nil && !strings.Contains(err.Error(), "use of closed") {
+		logger.Println("Copy client -> dest:", err)
+	}
+	closeBoth()
+	done <- struct{}{}
 	<-done
 }
 
-func genPolicy(logger *log.Logger, originHost string) (dstHost string, p *Policy, fail bool, block bool) {
+func genPolicy(logger *log.Logger, originHost string) (dstHost string, p Policy, fail bool, block bool) {
 	var err error
 
 	if net.ParseIP(originHost) != nil {
@@ -584,26 +592,26 @@ func genPolicy(logger *log.Logger, originHost string) (dstHost string, p *Policy
 		dstHost, ipPolicy, err = ipRedirect(logger, originHost)
 		if err != nil {
 			logger.Println("IP redirect error:", err)
-			return "", nil, true, false
+			return "", Policy{}, true, false
 		}
 		if ipPolicy == nil {
-			p = &defaultPolicy
+			p = defaultPolicy
 		} else {
 			p = mergePolicies(ipPolicy, &defaultPolicy)
 		}
 		if p.Mode == ModeBlock {
-			return "", nil, false, true
+			return "", Policy{}, false, true
 		}
 	} else {
 		domainPolicy := domainMatcher.Find(originHost)
 		found := domainPolicy != nil
 		if found {
 			if domainPolicy.Mode == ModeBlock {
-				return "", nil, false, true
+				return "", Policy{}, false, true
 			}
 			p = mergePolicies(domainPolicy, &defaultPolicy)
 		} else {
-			p = &defaultPolicy
+			p = defaultPolicy
 		}
 		var disableRedirect, cached bool
 		if p.Host == nil || *p.Host == "" {
@@ -614,7 +622,7 @@ func genPolicy(logger *log.Logger, originHost string) (dstHost string, p *Policy
 				} else {
 					logger.Println("Resolve", originHost, "fail:", err)
 				}
-				return "", nil, true, block
+				return "", Policy{}, true, block
 			}
 			if cached {
 				logger.Println("DNS(cached):", originHost, "->", dstHost)
@@ -634,7 +642,7 @@ func genPolicy(logger *log.Logger, originHost string) (dstHost string, p *Policy
 			dstHost, ipPolicy, err = ipRedirect(logger, dstHost)
 			if err != nil {
 				logger.Println("IP redirect error:", err)
-				return "", nil, true, false
+				return "", Policy{}, true, false
 			}
 			if ipPolicy != nil {
 				if found {
@@ -643,10 +651,18 @@ func genPolicy(logger *log.Logger, originHost string) (dstHost string, p *Policy
 					p = mergePolicies(ipPolicy, &defaultPolicy)
 				}
 				if p.Mode == ModeBlock {
-					return "", nil, false, true
+					return "", Policy{}, false, true
 				}
 			}
 		}
 	}
 	return
+}
+
+func getRawConn(conn net.Conn) (syscall.RawConn, error) {
+	tcpConn, ok := conn.(*net.TCPConn)
+	if !ok {
+		return nil, errors.New("not *net.TCPConn")
+	}
+	return tcpConn.SyscallConn()
 }

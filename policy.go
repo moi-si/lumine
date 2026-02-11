@@ -249,8 +249,11 @@ func (p *Policy) UnmarshalJSON(data []byte) error {
 		}
 	}
 
-	if tmp.SingleTimeout != nil {
+	if tmp.SingleTimeout == nil {
+		p.SingleTimeout = unsetInt
+	} else {
 		p.SingleTimeout, err = time.ParseDuration(*tmp.SingleTimeout)
+		println(*tmp.SingleTimeout)
 		if err != nil {
 			return fmt.Errorf("parse single_timeout %s: %w", *tmp.SingleTimeout, err)
 		}
@@ -262,8 +265,8 @@ func (p *Policy) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func (p *Policy) String() string {
-	fields := make([]string, 0, 11)
+func (p Policy) String() string {
+	fields := make([]string, 0, 5)
 	if p.ConnectTimeout != 0 {
 		fields = append(fields, "timeout="+p.ConnectTimeout.String())
 	}
@@ -288,18 +291,20 @@ func (p *Policy) String() string {
 	fields = append(fields, p.Mode.String())
 	switch p.Mode {
 	case ModeTLSRF:
-		fields = append(fields, fmt.Sprintf("%d records", p.NumRecords))
+		if p.ModMinorVer == BoolTrue {
+			fields = append(fields, "mod_minor_ver")
+		}
+		if p.NumRecords != unsetInt && p.NumRecords != 1 {
+			fields = append(fields, strconv.Itoa(p.NumRecords)+" records")
+		}
 		if p.NumSegments != unsetInt && p.NumSegments != 1 {
-			fields = append(fields, fmt.Sprintf("%d segments", p.NumSegments))
+			fields = append(fields, strconv.Itoa(p.NumSegments)+" segments")
 		}
 		if p.NumSegments != 1 && p.SendInterval > 0 {
 			fields = append(fields, "send_interval="+p.SendInterval.String())
 		}
 		if p.OOB == BoolTrue {
 			fields = append(fields, "oob")
-		}
-		if p.ModMinorVer == BoolTrue {
-			fields = append(fields, "mod_minor_ver")
 		}
 	case ModeTTLD:
 		if p.FakeTTL == 0 || p.FakeTTL == unsetInt {
@@ -321,12 +326,13 @@ func (p *Policy) String() string {
 	return strings.Join(fields, " | ")
 }
 
-func mergePolicies(policies ...*Policy) *Policy {
+func mergePolicies(policies ...*Policy) Policy {
 	merged := Policy{
 		HttpStatus:     unsetInt,
 		SendInterval:   unsetInt,
 		FakeTTL:        unsetInt,
 		ConnectTimeout: unsetInt,
+		SingleTimeout:  unsetInt,
 	}
 	for _, p := range policies {
 		if merged.ReplyFirst == BoolUnset && p.ReplyFirst != BoolUnset {
@@ -383,7 +389,7 @@ func mergePolicies(policies ...*Policy) *Policy {
 		if merged.Attempts == 0 && p.Attempts != 0 {
 			merged.Attempts = p.Attempts
 		}
-		if merged.SingleTimeout == 0 && p.SingleTimeout != 0 {
+		if merged.SingleTimeout == unsetInt && p.SingleTimeout != unsetInt {
 			merged.SingleTimeout = p.SingleTimeout
 		}
 	}
@@ -393,5 +399,5 @@ func mergePolicies(policies ...*Policy) *Policy {
 	if merged.DNSMode == DNSModeUnknown {
 		merged.DNSMode = DNSModeDefault
 	}
-	return &merged
+	return merged
 }

@@ -19,7 +19,7 @@
         "num_records": 4,
         "mod_minor_ver": true,
         "num_segs": 1,
-        "send_interval": "0s",
+        "send_interval": "100ms",
         "oob": false,
         "fake_ttl": 0,
         "fake_sleep": "200ms",
@@ -36,10 +36,10 @@
             "tls13_only": false
         },
         "76.223.126.88;(216.150.1|216.150.16|216.198.79|216.230.84|216.230.86|64.29.17|76.76.21|66.33.60|198.169.1|198.169.2|64.239.109|64.239.123).0/24;64.125.81.216/29": {
-            "map_to": "18.178.194.147"
-        },
-        "18.178.194.147": {
-            "mode": "raw"
+            "map_to": "^64.29.17.65",
+            "mode": "tls-rf",
+            "num_records": 1,
+            "num_segs": 3
         },
         "(151.101|146.75|199.232).0.0/16": {
             "map_to": "^146.75.48.0/22"
@@ -48,8 +48,10 @@
            "map_to": "^65.8.81.220"
         },
         "162.125.0.0/16": {
-            "mode": "ttl-d",
-            "map_to": "162.125.1.0/24"
+            "map_to": "162.125.1.0/24",
+            "mode": "tls-rf",
+            "num_records": 1,
+            "num_segs": 3
         }
     },
     "domain_policies": {
@@ -57,7 +59,7 @@
             "host": "172.64.229.211",
             "port": 8443
         },
-        "(i|s|).pximg.net": {
+        "(i|s|).pximg.net;pixiv.net;(www|embed).pixiv.net;api.booth.pm": {
             "host": "104.21.3.221"
         },
         "*(wikimedia|wikipedia|wiktionary|wikiversity|wikivoyage|wikisource|wikinews|wikidata|mediawiki|wikifunctions|wikibooks|wikiquote).org": {
@@ -120,23 +122,26 @@
         "video.pscp.tv": {
             "host": "146.75.34.164"
         },
-        "*(ooni.org|solana.com|vercel.app|sambanova.ai)": {
-            "mode": "ttl-d"
-        },
         "*webnode.(jp|com)": {
             "mode": "raw"
         },
         "onedrive.live.com": {
             "host": "13.107.139.11",
-            "mode": "ttl-d"
+            "mode": "tls-rf",
+            "num_records": 1,
+            "num_segs": 3
         },
         "skyapi.onedrive.live.com": {
             "host": "13.107.42.12",
-            "mode": "ttl-d"
+            "mode": "tls-rf",
+            "num_records": 1,
+            "num_segs": 3
         },
         "*disk.yandex.com": {
-            "mode": "ttl-d",
-            "host": "87.250.250.50"
+            "host": "87.250.250.50",
+            "mode": "tls-rf",
+            "num_records": 1,
+            "num_segs": 3
         },
         "*bing.(com|net);*microsoft(|online).com;*(live|msn|skype).com;*office.(com|net);*(mozilla.com|mozilla.net|mozilla.org|firefox.com|firefox.com.cn|mozgcp.net)": {
             "mode": "raw"

@@ -70,6 +70,7 @@ func handleSOCKS5(clientConn net.Conn, id uint32) {
 		once    sync.Once
 		dstConn net.Conn
 	)
+
 	closeBoth := func() {
 		once.Do(func() {
 			clientConn.Close()
@@ -128,7 +129,7 @@ func handleSOCKS5(clientConn net.Conn, id uint32) {
 
 	var (
 		originHost, dstHost string
-		policy              *Policy
+		policy              Policy
 	)
 	switch header[3] {
 	case 0x01: // IPv4 address
@@ -146,7 +147,7 @@ func handleSOCKS5(clientConn net.Conn, id uint32) {
 			return
 		}
 		if ipPolicy == nil {
-			policy = &defaultPolicy
+			policy = defaultPolicy
 		} else {
 			policy = mergePolicies(ipPolicy, &defaultPolicy)
 		}
@@ -165,7 +166,7 @@ func handleSOCKS5(clientConn net.Conn, id uint32) {
 			return
 		}
 		if ipPolicy == nil {
-			policy = &defaultPolicy
+			policy = defaultPolicy
 		} else {
 			policy = mergePolicies(ipPolicy, &defaultPolicy)
 		}
