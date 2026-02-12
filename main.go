@@ -3,12 +3,13 @@ package main
 import (
 	"flag"
 	"fmt"
+	_ "net/http/pprof"
 	"os"
 )
 
 func main() {
 	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "moi-si/lumine v0.4.0")
+		fmt.Fprintln(os.Stderr, "moi-si/lumine v0.5.0")
 		fmt.Fprintln(os.Stderr)
 		flag.PrintDefaults()
 	}

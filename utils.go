@@ -313,19 +313,16 @@ func handleTunnel(
 				return
 			}
 		}
-		done := make(chan struct{})
 		go func() {
 			if _, err := io.Copy(dstConn, cliConn); err != nil && !isUseOfClosedConn(err) {
 				logger.Error("Copy dest -> client:", err)
 			}
 			closeBoth()
-			done <- struct{}{}
 		}()
 		if _, err := io.Copy(cliConn, dstConn); err != nil && !isUseOfClosedConn(err) {
 			logger.Error("Copy client -> dest:", err)
 		}
 		closeBoth()
-		<-done
 		return
 	}
 
@@ -566,20 +563,16 @@ func handleTunnel(
 		}
 	}
 
-	done := make(chan struct{})
 	go func() {
 		if _, err := io.Copy(dstConn, cliConn); err != nil && !isUseOfClosedConn(err) {
 			logger.Error("Copy dest -> client:", err)
 		}
 		closeBoth()
-		done <- struct{}{}
 	}()
 	if _, err := io.Copy(cliConn, dstConn); err != nil && !isUseOfClosedConn(err) {
 		logger.Error("Copy client -> dest:", err)
 	}
 	closeBoth()
-	done <- struct{}{}
-	<-done
 }
 
 func genPolicy(logger *log.Logger, originHost string) (dstHost string, p Policy, fail bool, block bool) {
