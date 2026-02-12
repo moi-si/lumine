@@ -19,6 +19,7 @@ go build
 ### Top-Level Fields
 Field|Description|Example|Special Values
 -|-|-|-
+`log_level`|Log level|`"DEBUG"`, `"INFO"`, `"ERROR"`|-
 `socks5_address`|SOCKS5 bind address|`"127.0.0.1:1080"`|`"none"` disables SOCKS5 proxy
 `http_address`|HTTP bind address|`":1225"`|`"none"` disables HTTP proxy
 `dns_addr`|DNS over UDP/HTTPS server address for resolution|`"127.0.0.1:8053"`, `"https://1.1.1.1/dns-query"`|-
@@ -35,7 +36,7 @@ Field|Description|Example|Special Values
 ### Policy Fields
 Field|Description|Example|Special Values
 -|-|-|-
-`dns_mode`|Selects the DNS query strategy, determining which record type is requested and whether a fallback to the other type is performed|`prefer_ipv4`, `prefer_ipv6`, `ipv4_only`, `ipv6_only`|-
+`dns_mode`|Selects the DNS query strategy, determining which record type is requested and whether a fallback to the other type is performed|`"prefer_ipv4"`, `"prefer_ipv6"`, `"ipv4_only"`, `"ipv6_only"`|-
 `connect_timeout`|Maximum time to wait for a connection to be established|`"10s"`|-
 `reply_first`|Send SOCKS5 reply SUCCESS before connecting|`true`|-
 `host`|Override target host|`"^208.103.161.2"`, `"www.visa.cn"`|Prefix `^` disables IP redirection
