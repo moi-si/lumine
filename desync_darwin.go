@@ -11,8 +11,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-var errUnsupported = errors.New("not supported yet")
-
 var (
 	ttlCacheEnabled bool
 	ttlCacheTTL     int
@@ -40,9 +38,9 @@ func sendOOB(conn net.Conn) error {
 }
 
 func minReachableTTL(string, bool, int, int, time.Duration) (int, bool, error) {
-	return -1, false, errUnsupported
+	return -1, false, errors.ErrUnsupported
 }
 
 func desyncSend(net.Conn, bool, []byte, int, int, int, time.Duration) error {
-	return errUnsupported
+	return errors.ErrUnsupported
 }

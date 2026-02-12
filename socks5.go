@@ -4,11 +4,21 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"os"
 	"slices"
+	"strconv"
 	"sync"
+
+	log "github.com/moi-si/mylog"
+)
+
+const (
+	socks5RepSuccess          byte = 0x00
+	socks5RepServerFailure    byte = 0x01
+	socks5RepConnNotAllowed   byte = 0x02
+	socks5RepCmdNotSupported  byte = 0x07
+	socks5RepAtypNotSupported byte = 0x08
 )
 
 func socks5Accept(addr *string, serverAddr string, done chan struct{}) {
@@ -38,10 +48,11 @@ func socks5Accept(addr *string, serverAddr string, done chan struct{}) {
 	fmt.Println("Listening on", "socks5://"+listenAddr)
 
 	var connID uint32
+	logger := log.New(os.Stdout, "[S00000]", log.LstdFlags, logLevel)
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			log.Printf("SOCKS5 accept error: %s", err)
+			logger.Error("Accept:", err)
 		} else {
 			connID += 1
 			if connID > 0xFFFFF {
@@ -61,69 +72,73 @@ func readN(conn net.Conn, n int) ([]byte, error) {
 func sendReply(logger *log.Logger, conn net.Conn, rep byte) {
 	resp := []byte{0x05, rep, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
 	if _, err := conn.Write(resp); err != nil {
-		logger.Println("Send SOCKS5 reply fail:", err)
+		logger.Debug("Send SOCKS5 reply:", err)
 	}
 }
 
-func handleSOCKS5(clientConn net.Conn, id uint32) {
+func handleSOCKS5(cliConn net.Conn, id uint32) {
+	logger := log.New(os.Stdout, fmt.Sprintf("[S%05x]", id), log.LstdFlags, logLevel)
+	logger.Info("Connection from", cliConn.RemoteAddr().String())
+
 	var (
 		once    sync.Once
 		dstConn net.Conn
 	)
-
 	closeBoth := func() {
 		once.Do(func() {
-			clientConn.Close()
-			if dstConn != nil {
-				dstConn.Close()
+			if err := cliConn.Close(); err != nil {
+				logger.Debug("Close client conn:", err)
 			}
+			if dstConn != nil {
+				if err := dstConn.Close(); err != nil {
+					logger.Debug("Close dest conn:", err)
+				}
+			}
+			logger.Debug("Connection closed")
 		})
 	}
 	defer closeBoth()
 
-	logger := log.New(os.Stdout, fmt.Sprintf("[S%05x] ", id), log.LstdFlags)
-	logger.Println("Connection from", clientConn.RemoteAddr().String())
-
-	header, err := readN(clientConn, 2)
+	header, err := readN(cliConn, 2)
 	if err != nil {
-		logger.Println("Read method selection fail:", err)
+		logger.Error("Read method selection:", err)
 		return
 	}
 	if header[0] != 0x05 {
-		logger.Println("Not SOCKS5:", header[0])
+		logger.Error("Not SOCKS5:", header[0])
 		return
 	}
 	nMethods := int(header[1])
-	methods, err := readN(clientConn, nMethods)
+	methods, err := readN(cliConn, nMethods)
 	if err != nil {
-		logger.Println("Read methods fail:", err)
+		logger.Error("Read methods:", err)
 		return
 	}
 	var authMethod byte = 0xFF
 	if slices.Contains(methods, 0x00) {
 		authMethod = 0x00
 	}
-	if _, err = clientConn.Write([]byte{0x05, authMethod}); err != nil {
-		logger.Println("Method write fail:", err)
+	if _, err = cliConn.Write([]byte{0x05, authMethod}); err != nil {
+		logger.Error("Method write:", err)
 		return
 	}
 	if authMethod == 0xFF {
-		logger.Println("No `no auth` method")
+		logger.Error("No `no auth` method")
 		return
 	}
 
-	header, err = readN(clientConn, 4)
+	header, err = readN(cliConn, 4)
 	if err != nil {
-		logger.Println("Read req header fail:", err)
+		logger.Error("Read req header:", err)
 		return
 	}
 	if header[0] != 0x05 {
-		logger.Println("Ver err:", header[0])
+		logger.Error("Invalid version:", header[0])
 		return
 	}
 	if header[1] != 0x01 {
-		logger.Println("Not CONNECT:", header[1])
-		sendReply(logger, clientConn, 0x07)
+		logger.Error("Not CONNECT:", header[1])
+		sendReply(logger, cliConn, socks5RepCmdNotSupported)
 		return
 	}
 
@@ -133,17 +148,17 @@ func handleSOCKS5(clientConn net.Conn, id uint32) {
 	)
 	switch header[3] {
 	case 0x01: // IPv4 address
-		ipBytes, err := readN(clientConn, 4)
+		ipBytes, err := readN(cliConn, 4)
 		if err != nil {
-			logger.Println("Read IPv4 fail:", err)
+			logger.Error("Read IPv4:", err)
 			return
 		}
 		originHost = net.IP(ipBytes).String()
 		var ipPolicy *Policy
 		dstHost, ipPolicy, err = ipRedirect(logger, originHost)
 		if err != nil {
-			logger.Println("IP redirect error:", err)
-			sendReply(logger, clientConn, 0x01)
+			logger.Error("IP redirect:", err)
+			sendReply(logger, cliConn, socks5RepServerFailure)
 			return
 		}
 		if ipPolicy == nil {
@@ -152,17 +167,17 @@ func handleSOCKS5(clientConn net.Conn, id uint32) {
 			policy = mergePolicies(ipPolicy, &defaultPolicy)
 		}
 	case 0x04: // IPv6 address
-		ipBytes, err := readN(clientConn, 16)
+		ipBytes, err := readN(cliConn, 16)
 		if err != nil {
-			logger.Println("Read IPv6 fail", err)
+			logger.Error("Read IPv6:", err)
 			return
 		}
 		originHost = net.IP(ipBytes).String()
 		var ipPolicy *Policy
 		dstHost, ipPolicy, err = ipRedirect(logger, originHost)
 		if err != nil {
-			logger.Println("IP redirect error:", err)
-			sendReply(logger, clientConn, 0x01)
+			logger.Error("IP redirect:", err)
+			sendReply(logger, cliConn, socks5RepServerFailure)
 			return
 		}
 		if ipPolicy == nil {
@@ -171,65 +186,65 @@ func handleSOCKS5(clientConn net.Conn, id uint32) {
 			policy = mergePolicies(ipPolicy, &defaultPolicy)
 		}
 	case 0x03: // Domain name
-		lenByte, err := readN(clientConn, 1)
+		lenByte, err := readN(cliConn, 1)
 		if err != nil {
-			logger.Println("Read domain len fail:", err)
+			logger.Error("Read domain length:", err)
 			return
 		}
-		domainBytes, err := readN(clientConn, int(lenByte[0]))
+		domainBytes, err := readN(cliConn, int(lenByte[0]))
 		if err != nil {
-			logger.Println("Read domain fail:", err)
+			logger.Error("Read domain:", err)
 		}
 		originHost = string(domainBytes)
 		var fail, block bool
 		dstHost, policy, fail, block = genPolicy(logger, originHost)
 		if fail {
-			sendReply(logger, clientConn, 0x01)
+			sendReply(logger, cliConn, 0x01)
 			return
 		}
 		if block {
-			logger.Println("Blocked connection to " + originHost)
+			logger.Error("Blocked connection to", originHost)
 			if policy.ReplyFirst == BoolTrue {
-				sendReply(logger, clientConn, 0x00)
+				sendReply(logger, cliConn, socks5RepSuccess)
 			} else {
-				sendReply(logger, clientConn, 0x02)
+				sendReply(logger, cliConn, socks5RepConnNotAllowed)
 			}
 			return
 		}
 	default:
-		logger.Println("Invalid address type:", header[3])
-		sendReply(logger, clientConn, 0x08)
+		logger.Error("Invalid address type:", header[3])
+		sendReply(logger, cliConn, socks5RepAtypNotSupported)
 		return
 	}
-	portBytes, err := readN(clientConn, 2)
+	portBytes, err := readN(cliConn, 2)
 	if err != nil {
-		logger.Println("Read port fail:", err)
+		logger.Error("Read port:", err)
 		return
 	}
 	dstPort := binary.BigEndian.Uint16(portBytes)
 	oldTarget := net.JoinHostPort(originHost, fmt.Sprintf("%d", dstPort))
-	logger.Println("CONNECT", oldTarget)
-	logger.Println("Policy:", policy)
+	logger.Info("CONNECT", oldTarget)
+	logger.Info("Policy:", policy)
 	if policy.Mode == ModeBlock {
-		sendReply(logger, clientConn, 0x02)
+		sendReply(logger, cliConn, socks5RepConnNotAllowed)
 		return
 	}
 	if policy.Port != 0 && policy.Port != -1 {
 		dstPort = uint16(policy.Port)
 	}
-	target := net.JoinHostPort(dstHost, fmt.Sprintf("%d", dstPort))
+	target := net.JoinHostPort(dstHost, strconv.FormatUint(uint64(dstPort), 10))
 
 	replyFirst := policy.ReplyFirst == BoolTrue
 	if !replyFirst {
 		dstConn, err = net.DialTimeout("tcp", target, policy.ConnectTimeout)
 		if err != nil {
-			logger.Println("Connection failed:", err)
-			sendReply(logger, clientConn, 0x01)
+			logger.Error("Connection failed:", err)
+			sendReply(logger, cliConn, 0x01)
 			return
 		}
 	}
-	sendReply(logger, clientConn, 0x00)
+	sendReply(logger, cliConn, socks5RepSuccess)
 
-	handleTunnel(policy, replyFirst, dstConn, clientConn,
+	handleTunnel(policy, replyFirst, dstConn, cliConn,
 		logger, target, originHost, closeBoth)
 }

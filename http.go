@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"maps"
 	"net"
 	"net/http"
@@ -12,6 +11,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	log "github.com/moi-si/mylog"
 )
 
 const (
@@ -45,8 +46,10 @@ func httpAccept(addr *string, serverAddr string) {
 		listenAddr = "0.0.0.0" + listenAddr
 	}
 	fmt.Println("Listening on", "http://"+listenAddr)
+
+	logger := log.New(os.Stdout, "[H00000]", log.LstdFlags, logLevel)
 	if err := srv.ListenAndServe(); err != nil {
-		fmt.Println("HTTP ListenAndServe:", err)
+		logger.Error("ListenAndServe:", err)
 		return
 	}
 }
@@ -57,8 +60,8 @@ func handleHTTP(w http.ResponseWriter, req *http.Request) {
 		atomic.StoreUint32(&httpConnID, 0)
 		connID = 0
 	}
-	logger := log.New(os.Stdout, fmt.Sprintf("[H%05x] ", connID), log.LstdFlags)
-	logger.Printf("%s - \"%s %s %s\"", req.RemoteAddr, req.Method, req.RequestURI, req.Proto)
+	logger := log.New(os.Stdout, fmt.Sprintf("[H%05x]", connID), log.LstdFlags, logLevel)
+	logger.Info(req.RemoteAddr, "- \"", req.Method, req.RequestURI, req.Proto, "\"")
 
 	if req.Method == http.MethodConnect {
 		handleConnect(logger, w, req)
@@ -66,7 +69,7 @@ func handleHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if !req.URL.IsAbs() {
-		logger.Println("URI not fully qualified")
+		logger.Error("URI not fully qualified")
 		http.Error(w, "403 Forbidden", http.StatusForbidden)
 		return
 	}
@@ -77,14 +80,14 @@ func handleHTTP(w http.ResponseWriter, req *http.Request) {
 func handleConnect(logger *log.Logger, w http.ResponseWriter, req *http.Request) {
 	oldDest := req.Host
 	if oldDest == "" {
-		logger.Println("Empty host")
+		logger.Error("Empty host")
 		http.Error(w, "", http.StatusBadRequest)
 		return
 	}
 
 	originHost, dstPort, err := net.SplitHostPort(oldDest)
 	if err != nil {
-		logger.Println("SplitHostPort fail:", err)
+		logger.Error("SplitHostPort fail:", err)
 		return
 	}
 
@@ -94,12 +97,12 @@ func handleConnect(logger *log.Logger, w http.ResponseWriter, req *http.Request)
 		return
 	}
 	if block {
-		logger.Println("Connection blocked")
+		logger.Error("Connection blocked")
 		http.Error(w, status403, http.StatusForbidden)
 		return
 	}
 
-	logger.Println("Policy:", policy)
+	logger.Error("Policy:", policy)
 
 	if policy.Mode == ModeBlock {
 		http.Error(w, "", http.StatusForbidden)
@@ -114,13 +117,13 @@ func handleConnect(logger *log.Logger, w http.ResponseWriter, req *http.Request)
 
 	hijacker, ok := w.(http.Hijacker)
 	if !ok {
-		logger.Println("Hijacking not supported")
+		logger.Error("Hijacking not supported")
 		http.Error(w, status500, http.StatusInternalServerError)
 		return
 	}
 	cliConn, _, err := hijacker.Hijack()
 	if err != nil {
-		logger.Println("Hijack fail:", err)
+		logger.Error("Hijack fail:", err)
 		http.Error(w, status500, http.StatusInternalServerError)
 		return
 	}
@@ -131,10 +134,15 @@ func handleConnect(logger *log.Logger, w http.ResponseWriter, req *http.Request)
 	)
 	closeBoth := func() {
 		once.Do(func() {
-			cliConn.Close()
-			if dstConn != nil {
-				dstConn.Close()
+			if err := cliConn.Close(); err != nil {
+				logger.Debug("Close client conn:", err)
 			}
+			if dstConn != nil {
+				if err := dstConn.Close(); err != nil {
+					logger.Debug("Close dest conn:", err)
+				}
+			}
+			logger.Debug("Connection closed")
 		})
 	}
 	defer closeBoth()
@@ -143,22 +151,22 @@ func handleConnect(logger *log.Logger, w http.ResponseWriter, req *http.Request)
 	if replyFirst {
 		_, err = cliConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
 		if err != nil {
-			logger.Println("Write 200 error:", err)
+			logger.Error("Write 200:", err)
 			return
 		}
 	} else {
 		dstConn, err = net.Dial("tcp", dest)
 		if err != nil {
-			logger.Println("Connection failed:", err)
+			logger.Error("Connection failed:", err)
 			_, err = cliConn.Write([]byte("HTTP/1.1 502 Bad Gateway\r\n\r\n"))
 			if err != nil {
-				logger.Println("Write 502 error:", err)
+				logger.Error("Write 502:", err)
 			}
 			return
 		}
 		_, err = cliConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
 		if err != nil {
-			logger.Println("Write 200 error:", err)
+			logger.Error("Write 200:", err)
 			return
 		}
 	}
@@ -180,7 +188,7 @@ func forwardHTTPRequest(logger *log.Logger, w http.ResponseWriter, originReq *ht
 
 	resp, err := transport.RoundTrip(outReq)
 	if err != nil {
-		logger.Println("Transport error:", err)
+		logger.Error("Transport:", err)
 	}
 	defer resp.Body.Close()
 
@@ -188,6 +196,6 @@ func forwardHTTPRequest(logger *log.Logger, w http.ResponseWriter, originReq *ht
 	w.WriteHeader(resp.StatusCode)
 
 	if _, err = io.Copy(w, resp.Body); err != nil {
-		logger.Println("Error copying response body:", err)
+		logger.Error("Copying response body:", err)
 	}
 }

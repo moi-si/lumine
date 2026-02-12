@@ -1,4 +1,5 @@
 {
+    "log_level": "INFO",
     "socks5_address": "127.0.0.1:1080",
     "http_address": "127.0.0.1:1225",
     "dns_addr": "https://1997.cloudflare-gateway.com/dns-query",

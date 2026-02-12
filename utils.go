@@ -6,13 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"math/big"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
 	"syscall"
+
+	log "github.com/moi-si/mylog"
 )
 
 func parseClientHello(data []byte) (prtVer []byte, sniPos int, sniLen int, hasKeyShare bool, err error) {
@@ -288,7 +289,7 @@ func ipRedirect(logger *log.Logger, ip string) (string, *Policy, error) {
 		if ip == mapTo {
 			return ip, policy, nil
 		}
-		logger.Println("Redirect:", ip, "->", mapTo)
+		logger.Info("Redirect:", ip, "->", mapTo)
 
 		if chain {
 			ip = mapTo
@@ -308,20 +309,20 @@ func handleTunnel(
 		if replyFirst {
 			dstConn, err = net.DialTimeout("tcp", target, p.ConnectTimeout)
 			if err != nil {
-				logger.Println("Connection failed:", err)
+				logger.Error("Connection failed:", err)
 				return
 			}
 		}
 		done := make(chan struct{})
 		go func() {
-			if _, err := io.Copy(dstConn, cliConn); err != nil && !strings.Contains(err.Error(), "use of closed") {
-				logger.Println("Copy dest -> client:", err)
+			if _, err := io.Copy(dstConn, cliConn); err != nil && !isUseOfClosedConn(err) {
+				logger.Error("Copy dest -> client:", err)
 			}
 			closeBoth()
 			done <- struct{}{}
 		}()
-		if _, err := io.Copy(cliConn, dstConn); err != nil && !strings.Contains(err.Error(), "use of closed") {
-			logger.Println("Copy client -> dest:", err)
+		if _, err := io.Copy(cliConn, dstConn); err != nil && !isUseOfClosedConn(err) {
+			logger.Error("Copy client -> dest:", err)
 		}
 		closeBoth()
 		<-done
@@ -332,9 +333,9 @@ func handleTunnel(
 	peekBytes, err := br.Peek(5)
 	if err != nil {
 		if len(peekBytes) == 0 && errors.Is(err, io.EOF) {
-			logger.Println("Empty tunnel")
+			logger.Error("Empty tunnel")
 		} else {
-			logger.Println("Read first packet fail:", err)
+			logger.Error("Read first packet:", err)
 		}
 		return
 	}
@@ -342,7 +343,7 @@ func handleTunnel(
 	case 'G', 'P', 'D', 'O', 'T', 'H':
 		req, err := http.ReadRequest(br)
 		if err != nil {
-			logger.Println("HTTP request parsing fail:", err)
+			logger.Error("Parse HTTP request:", err)
 			return
 		}
 		defer req.Body.Close()
@@ -351,11 +352,11 @@ func handleTunnel(
 		if host == "" {
 			host = req.URL.Host
 			if host == "" {
-				logger.Println("Cannot determine target host")
+				logger.Error("Cannot determine target host")
 				return
 			}
 		}
-		logger.Printf("%s %s to %s", req.Method, req.URL, host)
+		logger.Info(req.Method, req.URL, "to", host)
 
 		var policy Policy
 		domainPolicy := domainMatcher.Find(host)
@@ -368,7 +369,7 @@ func handleTunnel(
 			if (*p.Host)[0] != '^' {
 				_, ipPolicy, err := ipRedirect(logger, *p.Host)
 				if err != nil {
-					logger.Println("IP redirect error:", err)
+					logger.Error("IP redirect:", err)
 					return
 				}
 				if ipPolicy != nil {
@@ -380,7 +381,7 @@ func handleTunnel(
 			if replyFirst {
 				dstConn, err = net.DialTimeout("tcp", target, p.ConnectTimeout)
 				if err != nil {
-					logger.Println("Connection failed:", err)
+					logger.Error("Connection failed:", err)
 					resp := &http.Response{
 						Status:        "502 Bad Gateway",
 						StatusCode:    502,
@@ -392,13 +393,13 @@ func handleTunnel(
 						Close:         true,
 					}
 					if err = resp.Write(cliConn); err != nil {
-						logger.Println("Send 502 fail:", err)
+						logger.Debug("Send 502:", err)
 					}
 					return
 				}
 			}
 			if err := req.Write(dstConn); err != nil {
-				logger.Println("Forward req fail:", err)
+				logger.Error("Forward request:", err)
 				return
 			}
 		} else {
@@ -417,9 +418,9 @@ func handleTunnel(
 				resp.Header.Set("Location", "https://"+host+req.URL.RequestURI())
 			}
 			if err = resp.Write(cliConn); err != nil {
-				logger.Printf("Send %d fail: %s", p.HttpStatus, err)
+				logger.Error("Send", p.HttpStatus, "fail:", err)
 			} else {
-				logger.Println("Sent", statusLine)
+				logger.Info("Sent", statusLine)
 			}
 			return
 		}
@@ -427,47 +428,47 @@ func handleTunnel(
 		payloadLen := binary.BigEndian.Uint16(peekBytes[3:5])
 		record := make([]byte, 5+payloadLen)
 		if _, err = io.ReadFull(br, record); err != nil {
-			logger.Println("Read first record fail:", err)
+			logger.Error("Read first record:", err)
 			return
 		}
 		prtVer, sniPos, sniLen, hasKeyShare, err := parseClientHello(record)
 		if err != nil {
-			logger.Println("Record parsing fail:", err)
+			logger.Error("Parse record:", err)
 			return
 		}
 		if p.Mode == ModeTLSAlert {
 			// fatal access_denied
 			if err = sendTLSAlert(cliConn, prtVer, 49, 2); err != nil {
-				logger.Println("Send TLS alert fail:", err)
+				logger.Debug("Send TLS alert:", err)
 			}
 			return
 		}
 		if p.TLS13Only == BoolTrue && !hasKeyShare {
-			logger.Println("Not a TLS 1.3 ClientHello, connection blocked")
+			logger.Info("Not a TLS 1.3 ClientHello, connection blocked")
 			// fatal protocol_version
 			if err = sendTLSAlert(cliConn, prtVer, 70, 2); err != nil {
-				logger.Println("Send TLS alert fail:", err)
+				logger.Debug("Send TLS alert:", err)
 			}
 			return
 		}
 		if sniPos <= 0 || sniLen <= 0 {
-			logger.Println("SNI not found")
+			logger.Info("SNI not found")
 			if replyFirst {
 				dstConn, err = net.DialTimeout("tcp", target, p.ConnectTimeout)
 				if err != nil {
-					logger.Println("Connection failed:", err)
+					logger.Error("Connection failed:", err)
 					return
 				}
 			}
 			if _, err = dstConn.Write(record); err != nil {
-				logger.Println("Send ClientHello directly fail:", err)
+				logger.Error("ClientHello sending directly:", err)
 				return
 			}
-			logger.Println("ClientHello sent directly")
+			logger.Info("ClientHello sent directly")
 		} else {
 			sniStr := string(record[sniPos : sniPos+sniLen])
 			if originHost != sniStr {
-				logger.Println("Server name:", sniStr)
+				logger.Info("Server name:", sniStr)
 				var sniPolicy Policy
 				domainPolicy := domainMatcher.Find(sniStr)
 				if domainPolicy == nil {
@@ -477,13 +478,13 @@ func handleTunnel(
 				}
 				switch sniPolicy.Mode {
 				case ModeBlock:
-					logger.Println("Connection blocked")
+					logger.Info("Connection blocked")
 					return
 				case ModeTLSAlert:
 					if err = sendTLSAlert(cliConn, prtVer, 49, 2); err != nil {
-						logger.Println("Send TLS alert fail:", err)
+						logger.Error("Send TLS alert:", err)
 					}
-					logger.Println("Connection blocked by sending TLS alert")
+					logger.Info("Connection blocked by sending TLS alert")
 					return
 				}
 			}
@@ -491,27 +492,27 @@ func handleTunnel(
 			if replyFirst {
 				dstConn, err = net.DialTimeout("tcp", target, p.ConnectTimeout)
 				if err != nil {
-					logger.Println("Connection failed:", err)
+					logger.Error("Connection failed:", err)
 					return
 				}
 			}
 			switch p.Mode {
 			case ModeDirect:
 				if _, err = dstConn.Write(record); err != nil {
-					logger.Println("ClientHello sending directly fail:", err)
+					logger.Error("ClientHello sending directly:", err)
 					return
 				}
-				logger.Println("ClientHello sent directly")
+				logger.Info("ClientHello sent directly")
 			case ModeTLSRF:
 				err = sendRecords(dstConn, record, sniPos, sniLen,
 					p.NumRecords, p.NumSegments,
 					p.OOB == BoolTrue, p.ModMinorVer == BoolTrue,
 					p.SendInterval)
 				if err != nil {
-					logger.Println("TLSRF fail:", err)
+					logger.Error("TLSRF fail:", err)
 					return
 				}
-				logger.Println("ClientHello sent")
+				logger.Info("ClientHello sent")
 			case ModeTTLD:
 				var ttl int
 				ipv6 := target[0] == '['
@@ -519,29 +520,26 @@ func handleTunnel(
 					var cached bool
 					ttl, cached, err = minReachableTTL(target, ipv6, p.MaxTTL, p.Attempts, p.SingleTimeout)
 					if err != nil {
-						logger.Println("TTL probing fail:", err)
-						sendReply(logger, cliConn, 0x01)
+						logger.Error("Probe TTL:", err)
 						return
 					}
 					if ttl == -1 {
-						logger.Println("Reachable TTL not found")
-						sendReply(logger, cliConn, 0x01)
+						logger.Error("Reachable TTL not found")
 						return
 					}
 					if calcTTL != nil {
 						ttl, err = calcTTL(ttl)
 						if err != nil {
-							logger.Println("TTL calculating fail:", err)
-							sendReply(logger, cliConn, 0x01)
+							logger.Error("Calculate TTL:", err)
 							return
 						}
 					} else {
 						ttl -= 1
 					}
 					if cached {
-						logger.Println("Fake TTL(cache): " + strconv.Itoa(ttl))
+						logger.Info("Fake TTL(cache): ", strconv.Itoa(ttl))
 					} else {
-						logger.Println("Fake TTL: " + strconv.Itoa(ttl))
+						logger.Info("Fake TTL:", ttl)
 					}
 				} else {
 					ttl = p.FakeTTL
@@ -551,18 +549,18 @@ func handleTunnel(
 					sniPos, sniLen, ttl, p.FakeSleep,
 				)
 				if err != nil {
-					logger.Println("TTLD fail:", err)
+					logger.Error("TTLD fail:", err)
 					return
 				}
-				logger.Println("ClientHello sent")
+				logger.Info("ClientHello sent")
 			}
 		}
 	default:
-		logger.Println("Unknown packet type")
+		logger.Info("Unknown packet type")
 		if replyFirst {
 			dstConn, err = net.DialTimeout("tcp", target, p.ConnectTimeout)
 			if err != nil {
-				logger.Println("Connection failed:", err)
+				logger.Error("Connection failed:", err)
 				return
 			}
 		}
@@ -570,14 +568,14 @@ func handleTunnel(
 
 	done := make(chan struct{})
 	go func() {
-		if _, err := io.Copy(dstConn, cliConn); err != nil && !strings.Contains(err.Error(), "use of closed") {
-			logger.Println("Copy dest -> client:", err)
+		if _, err := io.Copy(dstConn, cliConn); err != nil && !isUseOfClosedConn(err) {
+			logger.Error("Copy dest -> client:", err)
 		}
 		closeBoth()
 		done <- struct{}{}
 	}()
-	if _, err := io.Copy(cliConn, dstConn); err != nil && !strings.Contains(err.Error(), "use of closed") {
-		logger.Println("Copy client -> dest:", err)
+	if _, err := io.Copy(cliConn, dstConn); err != nil && !isUseOfClosedConn(err) {
+		logger.Error("Copy client -> dest:", err)
 	}
 	closeBoth()
 	done <- struct{}{}
@@ -591,7 +589,7 @@ func genPolicy(logger *log.Logger, originHost string) (dstHost string, p Policy,
 		var ipPolicy *Policy
 		dstHost, ipPolicy, err = ipRedirect(logger, originHost)
 		if err != nil {
-			logger.Println("IP redirect error:", err)
+			logger.Error("IP redirect:", err)
 			return "", Policy{}, true, false
 		}
 		if ipPolicy == nil {
@@ -617,17 +615,13 @@ func genPolicy(logger *log.Logger, originHost string) (dstHost string, p Policy,
 		if p.Host == nil || *p.Host == "" {
 			dstHost, cached, err = dnsResolve(originHost, p.DNSMode)
 			if err != nil {
-				if cached {
-					logger.Println("Resolve", originHost, "fail(cached):", err)
-				} else {
-					logger.Println("Resolve", originHost, "fail:", err)
-				}
-				return "", Policy{}, true, block
+				logger.Error("Resolve", originHost+":", err)
+				return "", Policy{}, true, false
 			}
 			if cached {
-				logger.Println("DNS(cached):", originHost, "->", dstHost)
+				logger.Info("DNS(cached):", originHost, "->", dstHost)
 			} else {
-				logger.Println("DNS:", originHost, "->", dstHost)
+				logger.Info("DNS:", originHost, "->", dstHost)
 			}
 		} else {
 			disableRedirect = (*p.Host)[0] == '^'
@@ -641,7 +635,7 @@ func genPolicy(logger *log.Logger, originHost string) (dstHost string, p Policy,
 			var ipPolicy *Policy
 			dstHost, ipPolicy, err = ipRedirect(logger, dstHost)
 			if err != nil {
-				logger.Println("IP redirect error:", err)
+				logger.Info("IP redirect:", err)
 				return "", Policy{}, true, false
 			}
 			if ipPolicy != nil {
@@ -674,4 +668,8 @@ func findLastDot(data []byte, sniPos, sniLen int) (offset int, found bool) {
 		}
 	}
 	return sniLen/2 + sniPos, false
+}
+
+func isUseOfClosedConn(err error) bool {
+	return strings.Contains(err.Error(), "use of closed")
 }

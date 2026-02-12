@@ -14,10 +14,12 @@ import (
 
 	"github.com/miekg/dns"
 	"github.com/moi-si/addrtrie"
+	log "github.com/moi-si/mylog"
 	"golang.org/x/net/proxy"
 )
 
 type Config struct {
+	LogLevel          string            `json:"log_level"`
 	TransmitFileLimit int               `json:"transmit_file_limit"`
 	Socks5Addr        string            `json:"socks5_address"`
 	HttpAddr          string            `json:"http_address"`
@@ -34,6 +36,7 @@ type Config struct {
 }
 
 var (
+	logLevel      = log.INFO
 	defaultPolicy Policy
 	sem           chan struct{}
 	dnsAddr       string
@@ -153,6 +156,19 @@ func loadConfig(filePath string) (string, string, error) {
 	var conf Config
 	if err = decoder.Decode(&conf); err != nil {
 		return "", "", err
+	}
+
+	if conf.LogLevel != "" {
+		switch strings.ToUpper(conf.LogLevel) {
+		case "DEBUG":
+			logLevel = log.DEBUG
+		case "INFO":
+			logLevel = log.INFO
+		case "ERROR":
+			logLevel = log.ERROR
+		default:
+			return "", "", errors.New("unknown log level " + conf.LogLevel)
+		}
 	}
 
 	defaultPolicy = conf.DefaultPolicy

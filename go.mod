@@ -2,18 +2,19 @@ module github.com/moi-si/lumine
 
 go 1.24.5
 
-require golang.org/x/sys v0.40.0
+require golang.org/x/sys v0.41.0
 
 require github.com/google/uuid v1.6.0
 
 require (
 	github.com/miekg/dns v1.1.72
 	github.com/moi-si/addrtrie v0.1.3
-	golang.org/x/net v0.49.0
+	github.com/moi-si/mylog v0.2.0
+	golang.org/x/net v0.50.0
 )
 
 require (
-	golang.org/x/mod v0.32.0 // indirect
+	golang.org/x/mod v0.33.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
-	golang.org/x/tools v0.41.0 // indirect
+	golang.org/x/tools v0.42.0 // indirect
 )
