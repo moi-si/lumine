@@ -229,20 +229,14 @@ func desyncSend(
 		fakeSleep = minInterval
 	}
 
-	cut := -1
-	for i := sniPos + sniLen; i >= sniPos; i-- {
-		if firstPacket[i] == '.' {
-			cut = i
-			break
-		}
-	}
+	cut, found := findLastDot(firstPacket, sniPos, sniLen)
 	var fakeData []byte
-	if cut == -1 {
-		cut = sniLen/2 + sniPos
-		fakeData = firstPacket[:cut]
-	} else {
+	if found {
 		fakeData = make([]byte, cut)
 		copy(fakeData, firstPacket[:sniPos])
+	} else {
+		cut = sniLen/2 + sniPos
+		fakeData = firstPacket[:cut]
 	}
 
 	err = sendFakeData(

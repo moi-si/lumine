@@ -666,3 +666,12 @@ func getRawConn(conn net.Conn) (syscall.RawConn, error) {
 	}
 	return tcpConn.SyscallConn()
 }
+
+func findLastDot(data []byte, sniPos, sniLen int) (offset int, found bool) {
+	for i := sniPos + sniLen; i >= sniPos; i-- {
+		if data[i] == '.' {
+			return i, true
+		}
+	}
+	return sniLen/2 + sniPos, false
+}

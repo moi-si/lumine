@@ -19,7 +19,7 @@
         "mod_minor_ver": true,
         "num_records": 4,
         "num_segs": 1,
-        "send_interval": "100ms",
+        "send_interval": "200ms",
         "oob": false,
         "fake_ttl": 0,
         "fake_sleep": "200ms",

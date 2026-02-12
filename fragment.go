@@ -8,7 +8,7 @@ import (
 )
 
 func sendRecords(conn net.Conn, data []byte,
-	offset, _, records, segments int,
+	offset, length, records, segments int,
 	oob, modMinorVer bool, interval time.Duration) error {
 	if modMinorVer {
 		data[2] = 0x04
@@ -18,7 +18,7 @@ func sendRecords(conn net.Conn, data []byte,
 		rightSegments := segments / 2
 		leftSegments := segments - rightSegments
 		packets := make([][]byte, 0, segments)
-		cut := offset + 2
+		cut, _ := findLastDot(data, offset, length)
 		splitAndAppend(data[:cut], nil, leftSegments, &packets)
 		splitAndAppend(data[cut:], nil, rightSegments, &packets)
 		for i, packet := range packets {
@@ -40,7 +40,7 @@ func sendRecords(conn net.Conn, data []byte,
 	rightChunks := records / 2
 	leftChunks := records - rightChunks
 	chunks := make([][]byte, 0, records)
-	cut := offset - 5 + 1 + 2
+	cut, _ := findLastDot(data, offset, length)
 	header := data[:3]
 	splitAndAppend(data[5:cut], header, leftChunks, &chunks)
 	splitAndAppend(data[cut:], header, rightChunks, &chunks)
