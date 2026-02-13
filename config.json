@@ -29,6 +29,9 @@
         "single_timeout": "500ms"
     },
     "ip_policies": {
+        "10.0.0.0/8;172.16.0.0/12;192.168.0.0/16;fc00::/7": {
+            "mode": "raw"
+        },
         "(104.16|172.64).0.0/13;104.24.0.0/14;162.158.0.0/15;188.114.96.0/20;66.235.200.0/24;8.6.112.0;8.47.69.0": {
             "map_to": "www.visa.cn"
         },
@@ -60,7 +63,10 @@
             "host": "172.64.229.211",
             "port": 8443
         },
-        "(i|s|).pximg.net;pixiv.net;(www|embed).pixiv.net;api.booth.pm": {
+        "developers.cloudflare.com": {
+            "host": "172.64.229.211"
+        },
+        "(i|s).pximg.net;(www.|embed.|)pixiv.net;api.booth.pm": {
             "host": "104.21.3.221"
         },
         "*(wikimedia|wikipedia|wiktionary|wikiversity|wikivoyage|wikisource|wikinews|wikidata|mediawiki|wikifunctions|wikibooks|wikiquote).org": {
@@ -117,7 +123,10 @@
         "platform.twitter.com": {
             "host": "146.75.120.157"
         },
-        "*twimg.com": {
+        "*x.com;(video|abs|pbs).twimg.com": {
+            "host": "172.64.229.211"
+        },
+        "abs-0.twimg.com": {
             "host": "146.75.48.159"
         },
         "video.pscp.tv": {
