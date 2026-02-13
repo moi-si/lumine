@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"sync"
 	"time"
 
+	"github.com/elastic/go-freelru"
 	"github.com/miekg/dns"
 )
 
@@ -63,14 +63,9 @@ var (
 	httpCli         *http.Client
 	dnsExchange     func(req *dns.Msg) (resp *dns.Msg, err error)
 	dnsCacheEnabled bool
-	dnsCache        sync.Map
-	dnsCacheTTL     int
+	dnsCache        *freelru.ShardedLRU[string, string]
+	dnsCacheTTL     time.Duration
 )
-
-type dnsCacheEntry struct {
-	IP       string
-	ExpireAt time.Time
-}
 
 func do53Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
 	resp, _, err = dnsClient.Exchange(req, dnsAddr)
@@ -128,16 +123,8 @@ func pickFirstAAAARecord(answer []dns.RR) string {
 
 func dnsResolve(domain string, dnsMode DNSMode) (ip string, cached bool, err error) {
 	if dnsCacheEnabled {
-		v, ok := dnsCache.Load(domain)
-		if ok {
-			k := v.(dnsCacheEntry)
-			if !k.ExpireAt.IsZero() {
-				if time.Now().Before(k.ExpireAt) {
-					return k.IP, true, nil
-				} else {
-					dnsCache.Delete(domain)
-				}
-			}
+		if ip, ok := dnsCache.Get(domain); ok {
+			return ip, true, nil
 		}
 	}
 
@@ -203,16 +190,7 @@ func dnsResolve(domain string, dnsMode DNSMode) (ip string, cached bool, err err
 	}
 
 	if dnsCacheEnabled {
-		var expireAt time.Time
-		if dnsCacheTTL == -1 {
-			expireAt = time.Time{}
-		} else {
-			expireAt = time.Now().Add(time.Duration(dnsCacheTTL) * time.Second)
-		}
-		dnsCache.Store(domain, dnsCacheEntry{
-			IP:       ip,
-			ExpireAt: expireAt,
-		})
+		dnsCache.AddWithLifetime(domain, ip, dnsCacheTTL)
 	}
 	return
 }

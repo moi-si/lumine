@@ -11,11 +11,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-var (
-	ttlCacheEnabled bool
-	ttlCacheTTL     int
-)
-
 func sendOOB(conn net.Conn) error {
 	rawConn, err := getRawConn(conn)
 	if err != nil {

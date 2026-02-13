@@ -14,6 +14,7 @@ import (
 	"syscall"
 
 	log "github.com/moi-si/mylog"
+	"github.com/cespare/xxhash/v2"
 )
 
 func parseClientHello(data []byte) (prtVer []byte, sniPos int, sniLen int, hasKeyShare bool, err error) {
@@ -665,4 +666,8 @@ func findLastDot(data []byte, sniPos, sniLen int) (offset int, found bool) {
 
 func isUseOfClosedConn(err error) bool {
 	return strings.Contains(err.Error(), "use of closed")
+}
+
+func hashStringXXHASH(s string) uint32 {
+	return uint32(xxhash.Sum64String(s))
 }

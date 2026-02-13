@@ -11,18 +11,12 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+const minInterval = 100 * time.Millisecond
+
 func minReachableTTL(addr string, ipv6 bool, maxTTL, attempts int, dialTimeout time.Duration) (int, bool, error) {
 	if ttlCacheEnabled {
-		v, ok := ttlCache.Load(addr)
-		if ok {
-			k := v.(ttlCacheEntry)
-			if !k.ExpireAt.IsZero() {
-				if time.Now().Before(k.ExpireAt) {
-					return k.TTL, true, nil
-				} else {
-					ttlCache.Delete(addr)
-				}
-			}
+		if ttl, ok := ttlCache.Get(addr); ok {
+			return ttl, true, nil
 		}
 	}
 
@@ -67,17 +61,8 @@ func minReachableTTL(addr string, ipv6 bool, maxTTL, attempts int, dialTimeout t
 		}
 	}
 
-	if ttlCacheEnabled && found != -1 {
-		var expireAt time.Time
-		if ttlCacheTTL == -1 {
-			expireAt = time.Time{}
-		} else {
-			expireAt = time.Now().Add(time.Duration(ttlCacheTTL * int(time.Second)))
-		}
-		ttlCache.Store(addr, ttlCacheEntry{
-			TTL:      found,
-			ExpireAt: expireAt,
-		})
+	if ttlCacheEnabled && found != -1{
+		ttlCache.AddWithLifetime(addr, found, dnsCacheTTL)
 	}
 
 	return found, false, nil

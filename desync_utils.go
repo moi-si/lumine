@@ -1,21 +1,13 @@
-//go:build windows || linux
-
 package main
 
 import (
-	"sync"
 	"time"
-)
 
-const minInterval = 100 * time.Millisecond
+	"github.com/elastic/go-freelru"
+)
 
 var (
 	ttlCacheEnabled bool
-	ttlCache        sync.Map
-	ttlCacheTTL     int
+	ttlCache        *freelru.ShardedLRU[string, int]
+	ttlCacheTTL     time.Duration
 )
-
-type ttlCacheEntry struct {
-	TTL      int
-	ExpireAt time.Time
-}

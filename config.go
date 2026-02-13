@@ -10,8 +10,11 @@ import (
 	"os"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 
+	"github.com/elastic/go-freelru"
 	"github.com/miekg/dns"
 	"github.com/moi-si/addrtrie"
 	log "github.com/moi-si/mylog"
@@ -29,7 +32,9 @@ type Config struct {
 	MaxJump           int               `json:"max_jump"`
 	FakeTTLRules      string            `json:"fake_ttl_rules"`
 	DNSCacheTTL       int               `json:"dns_cache_ttl"`
+	DNSCacheCapacity  int               `json:"dns_cache_cap"`
 	TTLCacheTTL       int               `json:"ttl_cache_ttl"`
+	TTLCacheCapacity  int               `json:"ttl_cache_cap"`
 	DefaultPolicy     Policy            `json:"default_policy"`
 	DomainPolicies    map[string]Policy `json:"domain_policies"`
 	IpPolicies        map[string]Policy `json:"ip_policies"`
@@ -197,12 +202,19 @@ func loadConfig(filePath string) (string, string, error) {
 		}
 	}
 
-	if conf.DNSCacheTTL < -1 {
-		conf.DNSCacheTTL = 0
+	if conf.DNSCacheTTL < 0 {
+		return "", "", errors.New("invalid dns_cache_ttl: " + strconv.Itoa(conf.DNSCacheTTL))
 	}
 	if conf.DNSCacheTTL != 0 {
+		if conf.DNSCacheCapacity < 1 {
+			return "", "", errors.New("invalid dns_cache_cap: "+strconv.Itoa(conf.DNSCacheCapacity))
+		}
+		dnsCache, err = freelru.NewSharded[string, string](uint32(conf.DNSCacheCapacity), hashStringXXHASH)
+		if err != nil {
+			return "", "", fmt.Errorf("init dns cache: %w", err)
+		}
 		dnsCacheEnabled = true
-		dnsCacheTTL = conf.DNSCacheTTL
+		dnsCacheTTL = time.Duration(conf.DNSCacheTTL) * time.Second
 	}
 
 	if conf.MaxJump <= 0 {
@@ -211,12 +223,19 @@ func loadConfig(filePath string) (string, string, error) {
 		maxJump = conf.MaxJump
 	}
 
-	if conf.TTLCacheTTL < -1 {
-		conf.TTLCacheTTL = 0
+	if conf.TTLCacheTTL < 0 {
+		return "", "", errors.New("invalid ttl cache ttl: " + strconv.Itoa(conf.TTLCacheTTL))
 	}
 	if conf.TTLCacheTTL != 0 {
+		if conf.TTLCacheCapacity < 1 {
+			return "", "", errors.New("invalid ttl_cache_cap: "+strconv.Itoa(conf.TTLCacheCapacity))
+		}
+		ttlCache, err = freelru.NewSharded[string, int](uint32(conf.TTLCacheCapacity), hashStringXXHASH)
+		if err != nil {
+			return "", "", fmt.Errorf("init ttl cache: %w", err)
+		}
 		ttlCacheEnabled = true
-		ttlCacheTTL = conf.TTLCacheTTL
+		ttlCacheTTL = time.Duration(conf.TTLCacheTTL) * time.Second
 	}
 
 	if conf.FakeTTLRules != "" {

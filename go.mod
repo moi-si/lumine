@@ -7,6 +7,8 @@ require golang.org/x/sys v0.41.0
 require github.com/google/uuid v1.6.0
 
 require (
+	github.com/cespare/xxhash/v2 v2.3.0
+	github.com/elastic/go-freelru v0.16.0
 	github.com/miekg/dns v1.1.72
 	github.com/moi-si/addrtrie v0.1.3
 	github.com/moi-si/mylog v0.2.0
