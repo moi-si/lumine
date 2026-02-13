@@ -181,12 +181,11 @@ func loadConfig(filePath string) (string, string, error) {
 		} else {
 			dialer, err := proxy.SOCKS5("tcp", conf.DoHProxy, nil, proxy.Direct)
 			if err != nil {
-				return "", "", fmt.Errorf("create socks5 dialer: %s", err)
+				return "", "", fmt.Errorf("create socks5 dialer: %w", err)
 			}
-			dialContext := func(ctx context.Context, network, address string) (net.Conn, error) {
+			transport := &http.Transport{DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
 				return dialer.Dial(network, address)
-			}
-			transport := &http.Transport{DialContext: dialContext}
+			}}
 			httpCli = &http.Client{Transport: transport}
 		}
 	} else {

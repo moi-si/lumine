@@ -239,7 +239,7 @@ func handleSOCKS5(cliConn net.Conn, id uint32) {
 		dstConn, err = net.DialTimeout("tcp", target, policy.ConnectTimeout)
 		if err != nil {
 			logger.Error("Connection failed:", err)
-			sendReply(logger, cliConn, 0x01)
+			sendReply(logger, cliConn, socks5RepServerFailure)
 			return
 		}
 	}
