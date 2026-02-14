@@ -24,7 +24,7 @@ Field|Description|Example|Special Values
 `http_address`|HTTP bind address|`":1225"`|`"none"` disables HTTP proxy
 `dns_addr`|DNS over UDP/HTTPS server address for resolution|`"127.0.0.1:8053"`, `"https://1.1.1.1/dns-query"`|-
 `udp_minsize`|Minimum UDP packet size for DNS queries|`4096`|`0` uses default DNS client size (may cause error)
-`socks5_for_doh`|SOCKS5 proxy server address for DoH|`"127.0.0.1:1080"`|Empty string disables proxy
+`socks5_for_doh`|SOCKS5 proxy server address for DoH|`"127.0.0.1:1080"`|Empty string disables proxy and enables DoH policy
 `max_jump`|Maximum redirect chain length for IP mapping|`30`|`0` defaults to 20
 `fake_ttl_rules`|TTL calculation rules for fake packets|`"0-1;3=3;5-1;8-2;13-3;20=18"`|Empty string disables TTL rules
 `transmit_file_limit`|Maximum concurrent TransmitFile operations|`2`|`0` or negative means no limit (unrestricted concurrency)
