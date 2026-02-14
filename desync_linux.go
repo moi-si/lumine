@@ -61,7 +61,7 @@ func minReachableTTL(addr string, ipv6 bool, maxTTL, attempts int, dialTimeout t
 		}
 	}
 
-	if ttlCacheEnabled && found != -1{
+	if ttlCacheEnabled && found != -1 {
 		ttlCache.AddWithLifetime(addr, found, dnsCacheTTL)
 	}
 

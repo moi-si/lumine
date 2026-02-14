@@ -13,8 +13,8 @@ import (
 	"strings"
 	"syscall"
 
-	log "github.com/moi-si/mylog"
 	"github.com/cespare/xxhash/v2"
+	log "github.com/moi-si/mylog"
 )
 
 func parseClientHello(data []byte) (prtVer []byte, sniPos int, sniLen int, hasKeyShare bool, err error) {
@@ -265,8 +265,8 @@ func transformIP(ipStr string, targetNetStr string) (string, error) {
 
 func ipRedirect(logger *log.Logger, ip string) (string, *Policy, error) {
 	for range maxJump {
-		policy := getIPPolicy(ip)
-		if policy == nil {
+		policy, exists := getIPPolicy(ip)
+		if !exists {
 			return ip, nil, nil
 		}
 		if policy.MapTo == nil || *policy.MapTo == "" {
@@ -290,13 +290,17 @@ func ipRedirect(logger *log.Logger, ip string) (string, *Policy, error) {
 		if ip == mapTo {
 			return ip, policy, nil
 		}
-		logger.Info("Redirect:", ip, "->", mapTo)
+		if logger != nil {
+			logger.Info("Redirect:", ip, "->", mapTo)
+		}
 
 		if chain {
 			ip = mapTo
 			continue
 		}
-		return mapTo, getIPPolicy(mapTo), nil
+
+		policy, _ = getIPPolicy(mapTo)
+		return mapTo, policy, nil
 	}
 	return "", nil, errors.New("too many redirects")
 }
@@ -356,14 +360,13 @@ func handleTunnel(
 		}
 		logger.Info(req.Method, req.URL, "to", host)
 
-		var policy Policy
-		domainPolicy := domainMatcher.Find(host)
-		if domainPolicy == nil {
-			policy = defaultPolicy
+		var p Policy
+		if domainPolicy, exists := domainMatcher.Find(host); exists {
+			p = mergePolicies(domainPolicy, &defaultPolicy)
 		} else {
-			policy = mergePolicies(&policy, &defaultPolicy)
+			p = defaultPolicy
 		}
-		if policy.Host != nil && *policy.Host != "" {
+		if p.Host != nil && *p.Host != "" {
 			if (*p.Host)[0] != '^' {
 				_, ipPolicy, err := ipRedirect(logger, *p.Host)
 				if err != nil {
@@ -371,7 +374,7 @@ func handleTunnel(
 					return
 				}
 				if ipPolicy != nil {
-					policy = mergePolicies(&policy, ipPolicy, &defaultPolicy)
+					p = mergePolicies(&p, ipPolicy, &defaultPolicy)
 				}
 			}
 		}
@@ -468,11 +471,10 @@ func handleTunnel(
 			if originHost != sniStr {
 				logger.Info("Server name:", sniStr)
 				var sniPolicy Policy
-				domainPolicy := domainMatcher.Find(sniStr)
-				if domainPolicy == nil {
-					sniPolicy = defaultPolicy
-				} else {
+				if domainPolicy, exists := domainMatcher.Find(sniStr); exists {
 					sniPolicy = mergePolicies(domainPolicy, &defaultPolicy)
+				} else {
+					sniPolicy = defaultPolicy
 				}
 				switch sniPolicy.Mode {
 				case ModeBlock:
@@ -594,53 +596,52 @@ func genPolicy(logger *log.Logger, originHost string) (dstHost string, p Policy,
 		if p.Mode == ModeBlock {
 			return "", Policy{}, false, true
 		}
+		return
+	}
+	domainPolicy, found := domainMatcher.Find(originHost)
+	if found {
+		if domainPolicy.Mode == ModeBlock {
+			return "", Policy{}, false, true
+		}
+		p = mergePolicies(domainPolicy, &defaultPolicy)
 	} else {
-		domainPolicy := domainMatcher.Find(originHost)
-		found := domainPolicy != nil
-		if found {
-			if domainPolicy.Mode == ModeBlock {
+		p = defaultPolicy
+	}
+	var disableRedirect, cached bool
+	if p.Host == nil || *p.Host == "" {
+		dstHost, cached, err = dnsResolve(originHost, p.DNSMode)
+		if err != nil {
+			logger.Error("Resolve", originHost+":", err)
+			return "", Policy{}, true, false
+		}
+		if cached {
+			logger.Info("DNS(cached):", originHost, "->", dstHost)
+		} else {
+			logger.Info("DNS:", originHost, "->", dstHost)
+		}
+	} else {
+		disableRedirect = (*p.Host)[0] == '^'
+		if disableRedirect {
+			dstHost = (*p.Host)[1:]
+		} else {
+			dstHost = *p.Host
+		}
+	}
+	if !disableRedirect {
+		var ipPolicy *Policy
+		dstHost, ipPolicy, err = ipRedirect(logger, dstHost)
+		if err != nil {
+			logger.Info("IP redirect:", err)
+			return "", Policy{}, true, false
+		}
+		if ipPolicy != nil {
+			if found {
+				p = mergePolicies(domainPolicy, ipPolicy, &defaultPolicy)
+			} else {
+				p = mergePolicies(ipPolicy, &defaultPolicy)
+			}
+			if p.Mode == ModeBlock {
 				return "", Policy{}, false, true
-			}
-			p = mergePolicies(domainPolicy, &defaultPolicy)
-		} else {
-			p = defaultPolicy
-		}
-		var disableRedirect, cached bool
-		if p.Host == nil || *p.Host == "" {
-			dstHost, cached, err = dnsResolve(originHost, p.DNSMode)
-			if err != nil {
-				logger.Error("Resolve", originHost+":", err)
-				return "", Policy{}, true, false
-			}
-			if cached {
-				logger.Info("DNS(cached):", originHost, "->", dstHost)
-			} else {
-				logger.Info("DNS:", originHost, "->", dstHost)
-			}
-		} else {
-			disableRedirect = (*p.Host)[0] == '^'
-			if disableRedirect {
-				dstHost = (*p.Host)[1:]
-			} else {
-				dstHost = *p.Host
-			}
-		}
-		if !disableRedirect {
-			var ipPolicy *Policy
-			dstHost, ipPolicy, err = ipRedirect(logger, dstHost)
-			if err != nil {
-				logger.Info("IP redirect:", err)
-				return "", Policy{}, true, false
-			}
-			if ipPolicy != nil {
-				if found {
-					p = mergePolicies(domainPolicy, ipPolicy, &defaultPolicy)
-				} else {
-					p = mergePolicies(ipPolicy, &defaultPolicy)
-				}
-				if p.Mode == ModeBlock {
-					return "", Policy{}, false, true
-				}
 			}
 		}
 	}
@@ -670,4 +671,8 @@ func isUseOfClosedConn(err error) bool {
 
 func hashStringXXHASH(s string) uint32 {
 	return uint32(xxhash.Sum64String(s))
+}
+
+func isIPv6(ip string) bool {
+	return strings.Contains(ip, ":")
 }

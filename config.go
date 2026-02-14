@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"runtime"
 	"sort"
@@ -47,9 +48,9 @@ var (
 	dnsAddr       string
 	maxJump       int
 	calcTTL       func(int) (int, error)
-	domainMatcher *addrtrie.DomainMatcher[Policy]
-	ipMatcher     *addrtrie.BitTrie[Policy]
-	ipv6Matcher   *addrtrie.BitTrie6[Policy]
+	domainMatcher *addrtrie.DomainMatcher[*Policy]
+	ipMatcher     *addrtrie.BitTrie[*Policy]
+	ipv6Matcher   *addrtrie.BitTrie6[*Policy]
 )
 
 type rule struct {
@@ -172,42 +173,18 @@ func loadConfig(filePath string) (string, string, error) {
 		case "ERROR":
 			logLevel = log.ERROR
 		default:
-			return "", "", errors.New("unknown log level " + conf.LogLevel)
+			return "", "", errors.New("unknown log level: " + conf.LogLevel)
 		}
 	}
 
 	defaultPolicy = conf.DefaultPolicy
-
-	dnsAddr = conf.DNSAddr
-	if strings.HasPrefix(dnsAddr, "https://") {
-		dnsExchange = dohExchange
-		if conf.DoHProxy == "" {
-			httpCli = new(http.Client)
-		} else {
-			dialer, err := proxy.SOCKS5("tcp", conf.DoHProxy, nil, proxy.Direct)
-			if err != nil {
-				return "", "", fmt.Errorf("create socks5 dialer: %w", err)
-			}
-			transport := &http.Transport{DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
-				return dialer.Dial(network, address)
-			}}
-			httpCli = &http.Client{Transport: transport}
-		}
-	} else {
-		dnsExchange = do53Exchange
-		if conf.UDPSize == 0 {
-			dnsClient = new(dns.Client)
-		} else {
-			dnsClient = &dns.Client{UDPSize: conf.UDPSize}
-		}
-	}
 
 	if conf.DNSCacheTTL < 0 {
 		return "", "", errors.New("invalid dns_cache_ttl: " + strconv.Itoa(conf.DNSCacheTTL))
 	}
 	if conf.DNSCacheTTL != 0 {
 		if conf.DNSCacheCapacity < 1 {
-			return "", "", errors.New("invalid dns_cache_cap: "+strconv.Itoa(conf.DNSCacheCapacity))
+			return "", "", errors.New("invalid dns_cache_cap: " + strconv.Itoa(conf.DNSCacheCapacity))
 		}
 		dnsCache, err = freelru.NewSharded[string, string](uint32(conf.DNSCacheCapacity), hashStringXXHASH)
 		if err != nil {
@@ -228,7 +205,7 @@ func loadConfig(filePath string) (string, string, error) {
 	}
 	if conf.TTLCacheTTL != 0 {
 		if conf.TTLCacheCapacity < 1 {
-			return "", "", errors.New("invalid ttl_cache_cap: "+strconv.Itoa(conf.TTLCacheCapacity))
+			return "", "", errors.New("invalid ttl_cache_cap: " + strconv.Itoa(conf.TTLCacheCapacity))
 		}
 		ttlCache, err = freelru.NewSharded[string, int](uint32(conf.TTLCacheCapacity), hashStringXXHASH)
 		if err != nil {
@@ -248,38 +225,176 @@ func loadConfig(filePath string) (string, string, error) {
 		}
 	}
 
-	domainMatcher = addrtrie.NewDomainMatcher[Policy]()
+	domainMatcher = addrtrie.NewDomainMatcher[*Policy]()
 	for patterns, policy := range conf.DomainPolicies {
-		p := policy
 		for elem := range strings.SplitSeq(patterns, ";") {
 			for _, pattern := range expandPattern(elem) {
-				domainMatcher.Add(pattern, p)
+				domainMatcher.Add(pattern, &policy)
 			}
 		}
 	}
 
-	ipMatcher = addrtrie.NewBitTrie[Policy]()
-	ipv6Matcher = addrtrie.NewBitTrie6[Policy]()
+	ipMatcher = addrtrie.NewBitTrie[*Policy]()
+	ipv6Matcher = addrtrie.NewBitTrie6[*Policy]()
 	for patterns, policy := range conf.IpPolicies {
-		p := policy
 		for elem := range strings.SplitSeq(patterns, ";") {
 			for _, ipOrNet := range expandPattern(elem) {
-				if strings.Contains(ipOrNet, ":") {
-					ipv6Matcher.Insert(ipOrNet, p)
+				if isIPv6(ipOrNet) {
+					ipv6Matcher.Insert(ipOrNet, &policy)
 				} else {
-					ipMatcher.Insert(ipOrNet, p)
+					ipMatcher.Insert(ipOrNet, &policy)
 				}
 			}
+		}
+	}
+
+	dnsAddr = conf.DNSAddr
+	if strings.HasPrefix(dnsAddr, "https://") {
+		var dialContext func(ctx context.Context, network, addr string) (net.Conn, error)
+		if conf.DoHProxy == "" {
+			dialContext, err = genDialContext()
+			if err != nil {
+				return "", "", err
+			}
+		} else {
+			dialer, err := proxy.SOCKS5("tcp", conf.DoHProxy, nil, proxy.Direct)
+			if err != nil {
+				return "", "", fmt.Errorf("create socks5 dialer: %w", err)
+			}
+			dialContext = func(_ context.Context, network, addr string) (net.Conn, error) {
+				return dialer.Dial(network, addr)
+			}
+		}
+		httpCli = &http.Client{Transport: &http.Transport{DialContext: dialContext}}
+		dnsExchange = dohExchange
+	} else {
+		dnsExchange = do53Exchange
+		if conf.UDPSize == 0 {
+			dnsClient = new(dns.Client)
+		} else {
+			dnsClient = &dns.Client{UDPSize: conf.UDPSize}
 		}
 	}
 
 	return conf.Socks5Addr, conf.HttpAddr, nil
 }
 
-func getIPPolicy(ip string) *Policy {
-	if strings.Contains(ip, ":") {
-		policy, _ := ipv6Matcher.Find(ip)
-		return policy
+func getIPPolicy(ip string) (*Policy, bool) {
+	if isIPv6(ip) {
+		return ipv6Matcher.Find(ip)
 	}
 	return ipMatcher.Find(ip)
+}
+
+var dohConnPolicy *Policy
+
+type myConn struct {
+	net.Conn
+	handled bool
+}
+
+func (c *myConn) Write(b []byte) (n int, err error) {
+	if c.handled {
+		return c.Conn.Write(b)
+	}
+	c.handled = true
+	switch dohConnPolicy.Mode {
+	case ModeBlock, ModeTLSAlert:
+		return 0, errors.New("blocked by policy")
+	case ModeTTLD:
+		return 0, errors.ErrUnsupported
+	}
+	var sniPos, sniLen int
+	var hasKeyShare bool
+	_, sniPos, sniLen, hasKeyShare, err = parseClientHello(b)
+	if err != nil {
+		return
+	}
+	if dohConnPolicy.TLS13Only == BoolTrue && !hasKeyShare {
+		return 0, errors.New("not a TLS 1.3 ClientHello")
+	}
+	switch dohConnPolicy.Mode {
+	case ModeDirect, ModeRaw:
+		return c.Conn.Write(b)
+	case ModeTLSRF:
+		err = sendRecords(c.Conn, b, sniPos, sniLen,
+			dohConnPolicy.NumRecords, dohConnPolicy.NumSegments,
+			dohConnPolicy.OOB == BoolTrue, dohConnPolicy.ModMinorVer == BoolTrue,
+			dohConnPolicy.SendInterval)
+	}
+	if err == nil {
+		n = len(b)
+	}
+	return
+}
+
+func genDialContext() (func(ctx context.Context, network, address string) (net.Conn, error), error) {
+	parsedURL, err := url.Parse(dnsAddr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid DoH URL: %w", err)
+	}
+	host := parsedURL.Hostname()
+	dohConnPolicy = new(Policy)
+	if net.ParseIP(host) != nil {
+		var ipPolicy *Policy
+		host, ipPolicy, err = ipRedirect(nil, host)
+		if ipPolicy == nil {
+			dohConnPolicy = &defaultPolicy
+		} else {
+			p := mergePolicies(ipPolicy, &defaultPolicy)
+			dohConnPolicy = &p
+		}
+		if err != nil {
+			return nil, fmt.Errorf("ip redirect: %w", err)
+		}
+	} else {
+		var disableRedirect bool
+		domainPolicy, found := domainMatcher.Find(host)
+		if found {
+			p := mergePolicies(domainPolicy, &defaultPolicy)
+			dohConnPolicy = &p
+		} else {
+			dohConnPolicy = &defaultPolicy
+		}
+		if dohConnPolicy.Host != nil && *dohConnPolicy.Host != "" {
+			disableRedirect = (*dohConnPolicy.Host)[0] == '^'
+			if disableRedirect {
+				host = (*dohConnPolicy.Host)[1:]
+			} else {
+				host = *dohConnPolicy.Host
+			}
+			if !disableRedirect {
+				var ipPolicy *Policy
+				host, ipPolicy, err = ipRedirect(nil, host)
+				if err != nil {
+					return nil, fmt.Errorf("ip redirect: %w", err)
+				}
+				if ipPolicy != nil {
+					var p Policy
+					if found {
+						p = mergePolicies(domainPolicy, ipPolicy, &defaultPolicy)
+					} else {
+						p = mergePolicies(ipPolicy, &defaultPolicy)
+					}
+					dohConnPolicy = &p
+				}
+			}
+		}
+	}
+	port := parsedURL.Port()
+	if port == "" {
+		port = "443"
+	}
+	if dohConnPolicy.Port != unsetInt {
+		port = strconv.FormatInt(int64(dohConnPolicy.Port), 10)
+	}
+	addr := net.JoinHostPort(host, port)
+	dialer := &net.Dialer{Timeout: dohConnPolicy.ConnectTimeout}
+	return func(ctx context.Context, network, _ string) (net.Conn, error) {
+		conn, err := dialer.DialContext(ctx, network, addr)
+		if err == nil {
+			return &myConn{Conn: conn}, nil
+		}
+		return nil, err
+	}, nil
 }

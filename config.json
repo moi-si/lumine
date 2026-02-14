@@ -3,7 +3,7 @@
     "socks5_address": "127.0.0.1:1080",
     "http_address": "127.0.0.1:1225",
     "dns_addr": "https://1997.cloudflare-gateway.com/dns-query",
-    "socks5_for_doh": "127.0.0.1:1080",
+    "socks5_for_doh": "",
     "udp_minsize": 4096,
     "dns_cache_ttl": 3600,
     "dns_cache_cap": 4096,
