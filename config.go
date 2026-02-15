@@ -30,7 +30,6 @@ type Config struct {
 	DNSAddr           string            `json:"dns_addr"`
 	UDPSize           uint16            `json:"udp_minsize"`
 	DoHProxy          string            `json:"socks5_for_doh"`
-	MaxJump           int               `json:"max_jump"`
 	FakeTTLRules      string            `json:"fake_ttl_rules"`
 	DNSCacheTTL       int               `json:"dns_cache_ttl"`
 	DNSCacheCapacity  int               `json:"dns_cache_cap"`
@@ -46,7 +45,6 @@ var (
 	defaultPolicy Policy
 	sem           chan struct{}
 	dnsAddr       string
-	maxJump       int
 	calcTTL       func(int) (int, error)
 	domainMatcher *addrtrie.DomainMatcher[*Policy]
 	ipMatcher     *addrtrie.BitTrie[*Policy]
@@ -192,12 +190,6 @@ func loadConfig(filePath string) (string, string, error) {
 		}
 		dnsCacheEnabled = true
 		dnsCacheTTL = time.Duration(conf.DNSCacheTTL) * time.Second
-	}
-
-	if conf.MaxJump <= 0 {
-		maxJump = 20
-	} else {
-		maxJump = conf.MaxJump
 	}
 
 	if conf.TTLCacheTTL < 0 {

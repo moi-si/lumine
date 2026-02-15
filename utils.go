@@ -264,45 +264,27 @@ func transformIP(ipStr string, targetNetStr string) (string, error) {
 }
 
 func ipRedirect(logger *log.Logger, ip string) (string, *Policy, error) {
-	for range maxJump {
-		policy, exists := getIPPolicy(ip)
-		if !exists {
-			return ip, nil, nil
-		}
-		if policy.MapTo == nil || *policy.MapTo == "" {
-			return ip, policy, nil
-		}
-
-		mapTo := *policy.MapTo
-		var chain bool
-		if mapTo[0] == '^' {
-			mapTo = mapTo[1:]
-		} else {
-			chain = true
-		}
-		if strings.LastIndexByte(mapTo, '/') != -1 {
-			var err error
-			mapTo, err = transformIP(ip, mapTo)
-			if err != nil {
-				return "", nil, err
-			}
-		}
-		if ip == mapTo {
-			return ip, policy, nil
-		}
-		if logger != nil {
-			logger.Info("Redirect:", ip, "->", mapTo)
-		}
-
-		if chain {
-			ip = mapTo
-			continue
-		}
-
-		policy, _ = getIPPolicy(mapTo)
-		return mapTo, policy, nil
+	policy, exists := getIPPolicy(ip)
+	if !exists {
+		return ip, nil, nil
 	}
-	return "", nil, errors.New("too many redirects")
+	if policy.MapTo == nil || *policy.MapTo == "" {
+		return ip, policy, nil
+	}
+	mapTo := *policy.MapTo
+	if strings.LastIndexByte(*policy.MapTo, '/') != -1 {
+		var err error
+		mapTo, err = transformIP(ip, *policy.MapTo)
+		if err != nil {
+			return "", nil, err
+		}
+	}
+	if logger != nil && ip != mapTo {
+		logger.Info("Redirect:", ip, "->", mapTo)
+	} else {
+		policy, _ = getIPPolicy(mapTo)
+	}
+	return mapTo, policy, nil
 }
 
 func handleTunnel(
