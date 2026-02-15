@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -87,7 +88,7 @@ func handleConnect(logger *log.Logger, w http.ResponseWriter, req *http.Request)
 
 	originHost, dstPort, err := net.SplitHostPort(oldDest)
 	if err != nil {
-		logger.Error("SplitHostPort fail:", err)
+		logger.Error("SplitHostPort:", err)
 		return
 	}
 
@@ -102,7 +103,7 @@ func handleConnect(logger *log.Logger, w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	logger.Error("Policy:", policy)
+	logger.Info("Policy:", policy)
 
 	if policy.Mode == ModeBlock {
 		http.Error(w, "", http.StatusForbidden)
@@ -110,7 +111,7 @@ func handleConnect(logger *log.Logger, w http.ResponseWriter, req *http.Request)
 	}
 
 	if policy.Port != 0 && policy.Port != -1 {
-		dstPort = fmt.Sprintf("%d", policy.Port)
+		dstPort = strconv.FormatInt(int64(policy.Port), 10)
 	}
 
 	dest := net.JoinHostPort(dstHost, dstPort)
