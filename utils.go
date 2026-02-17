@@ -271,9 +271,13 @@ func ipRedirect(logger *log.Logger, ip string) (string, *Policy, error) {
 	if policy.MapTo == nil || *policy.MapTo == "" {
 		return ip, policy, nil
 	}
+	var err error
 	mapTo := *policy.MapTo
-	if strings.LastIndexByte(*policy.MapTo, '/') != -1 {
-		var err error
+	if strings.HasPrefix(mapTo, tagPrefix) {
+		if mapTo, err = getFromIPPool(mapTo[1:]); err != nil {
+			return "", nil, err
+		}
+	} else if strings.LastIndexByte(*policy.MapTo, '/') != -1 {
 		mapTo, err = transformIP(ip, *policy.MapTo)
 		if err != nil {
 			return "", nil, err
@@ -589,8 +593,9 @@ func genPolicy(logger *log.Logger, originHost string) (dstHost string, p Policy,
 	} else {
 		p = defaultPolicy
 	}
-	var disableRedirect, cached bool
-	if p.Host == nil || *p.Host == "" {
+	var cached bool
+	disableRedirect := p.Host != nil && strings.HasPrefix(*p.Host, "^")
+	if p.Host == nil || *p.Host == "" || *p.Host == "^" {
 		dstHost, cached, err = dnsResolve(originHost, p.DNSMode)
 		if err != nil {
 			logger.Error("Resolve", originHost+":", err)
@@ -602,11 +607,19 @@ func genPolicy(logger *log.Logger, originHost string) (dstHost string, p Policy,
 			logger.Info("DNS:", originHost, "->", dstHost)
 		}
 	} else {
-		disableRedirect = (*p.Host)[0] == '^'
 		if disableRedirect {
 			dstHost = (*p.Host)[1:]
 		} else {
 			dstHost = *p.Host
+		}
+		if strings.HasPrefix(dstHost, tagPrefix) {
+			if dstHost, err = getFromIPPool(dstHost[1:]); err != nil {
+				logger.Error(err)
+				return "", Policy{}, true, false
+			}
+			logger.Info("Host:", *p.Host, "->", dstHost)
+		} else {
+			logger.Info("Host:", *p.Host)
 		}
 	}
 	if !disableRedirect {
@@ -657,4 +670,19 @@ func hashStringXXHASH(s string) uint32 {
 
 func isIPv6(ip string) bool {
 	return strings.Contains(ip, ":")
+}
+
+func getFromIPPool(tag string) (ipStr string, err error) {
+	if len(ipPools) == 0 {
+		return "", errors.New("no ip pools")
+	}
+	ipPool, exists := ipPools[tag]
+	if !exists {
+		return "", errors.New("ip pool " + tag + " is not exists")
+	}
+	ip := ipPool.Get()
+	if !ip.IsValid() {
+		return "", errors.New("cannot get ip from " + tag)
+	}
+	return ip.String(), nil
 }

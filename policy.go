@@ -95,7 +95,7 @@ type Policy struct {
 	ConnectTimeout time.Duration
 	Host           *string
 	MapTo          *string
-	Port           int16
+	Port           int
 	HttpStatus     int
 	TLS13Only      BoolWithDefault
 	Mode           Mode
@@ -163,7 +163,7 @@ func (p *Policy) UnmarshalJSON(data []byte) error {
 	} else if *tmp.Port < 0 || *tmp.Port > 65535 {
 		return fmt.Errorf("port %d: outside the valid range", *tmp.Port)
 	} else {
-		p.Port = int16(*tmp.Port)
+		p.Port = *tmp.Port
 	}
 
 	if tmp.HttpStatus == nil {
@@ -265,20 +265,14 @@ func (p *Policy) UnmarshalJSON(data []byte) error {
 }
 
 func (p Policy) String() string {
-	fields := make([]string, 0, 5)
+	fields := make([]string, 0, 11)
 	if p.ConnectTimeout != 0 {
 		fields = append(fields, "timeout="+p.ConnectTimeout.String())
 	}
-	var addr string
-	if p.Host != nil && *p.Host != "" {
-		addr += *p.Host
+	if  p.Port != unsetInt && p.Port != 0 {
+		fields = append(fields, ":"+strconv.FormatInt(int64(p.Port), 10))
 	}
-	if p.Port != unsetInt && p.Port != 0 {
-		addr += ":" + strconv.FormatInt(int64(p.Port), 10)
-	}
-	if addr != "" {
-		fields = append(fields, addr)
-	} else {
+	if p.Host == nil || *p.Host == "" {
 		fields = append(fields, p.DNSMode.String())
 	}
 	if p.HttpStatus > 0 {
@@ -322,7 +316,7 @@ func (p Policy) String() string {
 		}
 		fields = append(fields, "fake_sleep="+p.FakeSleep.String())
 	}
-	return strings.Join(fields, " | ")
+	return strings.Join(fields, ", ")
 }
 
 func mergePolicies(policies ...*Policy) Policy {

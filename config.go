@@ -23,26 +23,28 @@ import (
 )
 
 type Config struct {
-	LogLevel          string            `json:"log_level"`
-	TransmitFileLimit int               `json:"transmit_file_limit"`
-	Socks5Addr        string            `json:"socks5_address"`
-	HttpAddr          string            `json:"http_address"`
-	DNSAddr           string            `json:"dns_addr"`
-	UDPSize           uint16            `json:"udp_minsize"`
-	DoHProxy          string            `json:"socks5_for_doh"`
-	FakeTTLRules      string            `json:"fake_ttl_rules"`
-	DNSCacheTTL       int               `json:"dns_cache_ttl"`
-	DNSCacheCapacity  int               `json:"dns_cache_cap"`
-	TTLCacheTTL       int               `json:"ttl_cache_ttl"`
-	TTLCacheCapacity  int               `json:"ttl_cache_cap"`
-	DefaultPolicy     Policy            `json:"default_policy"`
-	DomainPolicies    map[string]Policy `json:"domain_policies"`
-	IpPolicies        map[string]Policy `json:"ip_policies"`
+	LogLevel          string             `json:"log_level"`
+	TransmitFileLimit int                `json:"transmit_file_limit"`
+	Socks5Addr        string             `json:"socks5_address"`
+	HttpAddr          string             `json:"http_address"`
+	DNSAddr           string             `json:"dns_addr"`
+	UDPSize           uint16             `json:"udp_minsize"`
+	DoHProxy          string             `json:"socks5_for_doh"`
+	FakeTTLRules      string             `json:"fake_ttl_rules"`
+	DNSCacheTTL       int                `json:"dns_cache_ttl"`
+	DNSCacheCapacity  int                `json:"dns_cache_cap"`
+	TTLCacheTTL       int                `json:"ttl_cache_ttl"`
+	TTLCacheCapacity  int                `json:"ttl_cache_cap"`
+	IPPools           map[string]*IPPool `json:"ip_pools"`
+	DefaultPolicy     Policy             `json:"default_policy"`
+	DomainPolicies    map[string]Policy  `json:"domain_policies"`
+	IpPolicies        map[string]Policy  `json:"ip_policies"`
 }
 
 var (
 	logLevel      = log.INFO
 	defaultPolicy Policy
+	ipPools       map[string]*IPPool
 	sem           chan struct{}
 	dnsAddr       string
 	calcTTL       func(int) (int, error)
@@ -176,6 +178,15 @@ func loadConfig(filePath string) (string, string, error) {
 	}
 
 	defaultPolicy = conf.DefaultPolicy
+	if len(conf.IPPools) != 0 {
+		ipPools = conf.IPPools
+		for tag, pool := range ipPools {
+			logger := log.New(os.Stdout, "<"+tag+">", log.LstdFlags, logLevel)
+			if err := pool.Init(logger); err != nil {
+				return "", "", fmt.Errorf("init ip pool %s: %w", tag, err)
+			}
+		}
+	}
 
 	if conf.DNSCacheTTL < 0 {
 		return "", "", errors.New("invalid dns_cache_ttl: " + strconv.Itoa(conf.DNSCacheTTL))
@@ -354,6 +365,11 @@ func genDialContext() (func(ctx context.Context, network, address string) (net.C
 				host = (*dohConnPolicy.Host)[1:]
 			} else {
 				host = *dohConnPolicy.Host
+			}
+			if strings.HasPrefix(host, tagPrefix) {
+				if host, err = getFromIPPool(host[1:]); err != nil {
+					return nil, err
+				}
 			}
 			if !disableRedirect {
 				var ipPolicy *Policy

@@ -3,13 +3,12 @@ package main
 import (
 	"flag"
 	"fmt"
-	_ "net/http/pprof"
 	"os"
 )
 
 func main() {
 	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "moi-si/lumine v0.6.1")
+		fmt.Fprintln(os.Stderr, "moi-si/lumine v0.7.0")
 		fmt.Fprintln(os.Stderr)
 		flag.PrintDefaults()
 	}
@@ -23,6 +22,12 @@ func main() {
 	if err != nil {
 		fmt.Println("Failed to load config:", err)
 		return
+	}
+
+	if len(ipPools) != 0 {
+		for _, pool := range ipPools {
+			defer pool.Close()
+		}
 	}
 
 	done := make(chan struct{})
