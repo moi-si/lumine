@@ -11,7 +11,7 @@
     "ttl_cache_cap": 1024,
     "fake_ttl_rules": "0-1;3=3;5-1;8-2;13-3;20=18",
     "transmit_file_limit": 2,
-    "ip_pool": {
+    "ip_pools": {
         "cloudflare": {
             "ips": ["172.64.229.0/24", "www.visa.cn", "www.ietf.org", "fbi.gov"],
             "port": 443
