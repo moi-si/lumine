@@ -45,10 +45,10 @@ func socks5Accept(addr *string, serverAddr string, done chan struct{}) {
 	if listenAddr[0] == ':' {
 		listenAddr = "0.0.0.0" + listenAddr
 	}
-	fmt.Println("Listening on", "socks5://"+listenAddr)
+	logger := log.New(os.Stdout, "[S00000]", log.LstdFlags, logLevel)
+	logger.Info("Listening on", "socks5://"+listenAddr)
 
 	var connID uint32
-	logger := log.New(os.Stdout, "[S00000]", log.LstdFlags, logLevel)
 	for {
 		conn, err := ln.Accept()
 		if err != nil {

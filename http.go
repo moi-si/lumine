@@ -46,9 +46,9 @@ func httpAccept(addr *string, serverAddr string) {
 	if listenAddr[0] == ':' {
 		listenAddr = "0.0.0.0" + listenAddr
 	}
-	fmt.Println("Listening on", "http://"+listenAddr)
-
 	logger := log.New(os.Stdout, "[H00000]", log.LstdFlags, logLevel)
+	logger.Info("Listening on", "http://"+listenAddr)
+
 	if err := srv.ListenAndServe(); err != nil {
 		logger.Error("ListenAndServe:", err)
 		return
