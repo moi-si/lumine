@@ -34,7 +34,7 @@ const (
 type IPPool struct {
 	logger *log.Logger
 
-	ips            []netip.Addr
+	ips            []string
 	port           uint16
 	topIPCount     uint8
 	attempts       uint8
@@ -119,7 +119,7 @@ func (p *IPPool) UnmarshalJSON(b []byte) error {
 	if tmp.UpdateInterval != "" {
 		updateInterval, err = time.ParseDuration(tmp.UpdateInterval)
 		if err != nil || updateInterval <= 0 {
-			return fmt.Errorf("invalid update_interval: %s", tmp.UpdateInterval) // 修复笔误
+			return fmt.Errorf("invalid update_interval: %s", tmp.UpdateInterval)
 		}
 	}
 
@@ -135,41 +135,43 @@ func (p *IPPool) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-func parseIPList(sources []string) ([]netip.Addr, error) {
-	ips := make([]netip.Addr, 0, len(sources)*10)
-	for _, s := range sources {
-		if len(ips) >= maxIPPoolSize {
-			return nil, fmt.Errorf("IP pool exceeds maximum size (%d) during parsing", maxIPPoolSize)
-		}
-		if addr, err := netip.ParseAddr(s); err == nil {
-			ips = append(ips, addr)
-			continue
-		}
-		if prefix, err := netip.ParsePrefix(s); err == nil {
-			addr := prefix.Addr()
-			for prefix.Contains(addr) {
-				if len(ips) >= maxIPPoolSize {
-					return nil, fmt.Errorf("CIDR %s exceeds max pool size (%d)", s, maxIPPoolSize)
-				}
-				ips = append(ips, addr)
-				next := addr.Next()
-				if !next.IsValid() || !prefix.Contains(next) {
-					break
-				}
-				addr = next
+func parseIPList(sources []string) ([]string, error) {
+	ips := make([]string, 0, len(sources)*10)
+	for _, pattern := range sources {
+		for _, s := range expandPattern(pattern) {
+			if len(ips) >= maxIPPoolSize {
+				return nil, fmt.Errorf("IP pool exceeds maximum size (%d) during parsing", maxIPPoolSize)
 			}
-			continue
-		}
-		addrs, err := net.LookupIP(s)
-		if err != nil {
-			return nil, fmt.Errorf("DNS lookup failed for %s: %w", s, err)
-		}
-		for _, ip := range addrs {
-			if addr, ok := netip.AddrFromSlice(ip); ok && addr.IsValid() {
-				if len(ips) >= maxIPPoolSize {
-					return nil, fmt.Errorf("DNS resolution for %s exceeds max pool size", s)
+			if addr, err := netip.ParseAddr(s); err == nil && addr.IsValid() {
+				ips = append(ips, s)
+				continue
+			}
+			if prefix, err := netip.ParsePrefix(s); err == nil {
+				addr := prefix.Addr()
+				for prefix.Contains(addr) {
+					if len(ips) >= maxIPPoolSize {
+						return nil, fmt.Errorf("CIDR %s exceeds max pool size (%d)", s, maxIPPoolSize)
+					}
+					ips = append(ips, addr.String())
+					next := addr.Next()
+					if !next.IsValid() || !prefix.Contains(next) {
+						break
+					}
+					addr = next
 				}
-				ips = append(ips, addr)
+				continue
+			}
+			addrs, err := net.LookupIP(s)
+			if err != nil {
+				return nil, fmt.Errorf("DNS lookup failed for %s: %w", s, err)
+			}
+			for _, ip := range addrs {
+				if addr, ok := netip.AddrFromSlice(ip); ok && addr.IsValid() {
+					if len(ips) >= maxIPPoolSize {
+						return nil, fmt.Errorf("DNS resolution for %s exceeds max pool size", s)
+					}
+					ips = append(ips, addr.String())
+				}
 			}
 		}
 	}
@@ -252,7 +254,7 @@ func (p *IPPool) testIP(index int) (time.Duration, float64) {
 	)
 	dialer := &net.Dialer{Timeout: p.timeout}
 	portStr := strconv.FormatUint(uint64(p.port), 10)
-	addrStr := net.JoinHostPort(p.ips[index].String(), portStr)
+	addrStr := net.JoinHostPort(p.ips[index], portStr)
 
 	for range p.attempts {
 		start := time.Now()
@@ -269,7 +271,9 @@ func (p *IPPool) testIP(index int) (time.Duration, float64) {
 	if successCount == 0 {
 		return time.Duration(math.MaxInt64), lossRate
 	}
-	return totalLatency / time.Duration(successCount), lossRate
+	rtt := totalLatency / time.Duration(successCount)
+	p.logger.Debug(fmt.Sprintf("ip=%s, rtt=%s, loss=%.2f%%", p.ips[index], rtt.String(), lossRate*100))
+	return rtt, lossRate
 }
 
 func (p *IPPool) updateBest(results []ipResult) {
@@ -313,7 +317,8 @@ func (p *IPPool) updateBest(results []ipResult) {
 	builder.Grow(len("Current best IPs: ") + validCount*17)
 	builder.WriteString("Current best IPs: ")
 	for _, index := range p.bestIndexes[:validCount] {
-		builder.WriteString(p.ips[index].String() + " ")
+		builder.WriteString(p.ips[index])
+		builder.WriteByte(' ')
 	}
 	p.logger.Debug(builder.String())
 
@@ -335,12 +340,12 @@ func (p *IPPool) monitor() {
 	}
 }
 
-func (p *IPPool) Get() netip.Addr {
+func (p *IPPool) Get() string {
 	p.mu.RLock()
 	validCount := int(p.curValidIPs)
 	if validCount == 0 {
 		p.mu.RUnlock()
-		return netip.Addr{}
+		return ""
 	}
 	indexes := append([]int(nil), p.bestIndexes[:validCount]...)
 	weights := append([]int(nil), p.bestWeights[:validCount]...)
@@ -366,6 +371,6 @@ func (p *IPPool) Close() {
 	}
 }
 
-func (p *IPPool) Reset() {
+/*func (p *IPPool) Reset() {
 	p.scan()
-}
+}*/

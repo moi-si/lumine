@@ -294,12 +294,12 @@ func getIPPolicy(ip string) (*Policy, bool) {
 
 var dohConnPolicy *Policy
 
-type myConn struct {
+type interceptConn struct {
 	net.Conn
 	handled bool
 }
 
-func (c *myConn) Write(b []byte) (n int, err error) {
+func (c *interceptConn) Write(b []byte) (n int, err error) {
 	if c.handled {
 		return c.Conn.Write(b)
 	}
@@ -407,7 +407,7 @@ func genDialContext() (func(ctx context.Context, network, address string) (net.C
 	return func(ctx context.Context, network, _ string) (net.Conn, error) {
 		conn, err := dialer.DialContext(ctx, network, addr)
 		if err == nil {
-			return &myConn{Conn: conn}, nil
+			return &interceptConn{Conn: conn}, nil
 		}
 		return nil, err
 	}, nil

@@ -152,28 +152,50 @@ func sendTLSAlert(conn net.Conn, prtVer []byte, desc byte, level byte) error {
 
 func expandPattern(s string) []string {
 	left := -1
-	right := -1
 	for i, ch := range s {
-		if ch == '(' && left == -1 {
+		if ch == '(' {
 			left = i
-		}
-		if ch == ')' && right == -1 {
-			right = i
+			break
 		}
 	}
-	if left == -1 && right == -1 {
+
+	if left == -1 {
+		return splitByPipe(s)
+	}
+
+	right := -1
+	depth := 1
+	for i := left + 1; i < len(s); i++ {
+		if s[i] == '(' {
+			depth++
+		} else if s[i] == ')' {
+			depth--
+			if depth == 0 {
+				right = i
+				break
+			}
+		}
+	}
+
+	if right == -1 {
 		return splitByPipe(s)
 	}
 
 	prefix := s[:left]
-	suffix := s[right+1:]
 	inner := s[left+1 : right]
+	suffix := s[right+1:]
 
 	parts := splitByPipe(inner)
-	result := make([]string, 0, len(parts))
+
+	suffixResults := expandPattern(suffix)
+
+	result := make([]string, 0, len(parts)*len(suffixResults))
 	for _, part := range parts {
-		result = append(result, prefix+part+suffix)
+		for _, suff := range suffixResults {
+			result = append(result, prefix+part+suff)
+		}
 	}
+
 	return result
 }
 
@@ -306,12 +328,12 @@ func handleTunnel(
 		}
 		go func() {
 			if _, err := io.Copy(dstConn, cliConn); err != nil && !isUseOfClosedConn(err) {
-				logger.Error("Copy dest -> client:", err)
+				logger.Error("Copy", originHost, "->", cliConn.RemoteAddr().String()+":", err)
 			}
 			closeBoth()
 		}()
 		if _, err := io.Copy(cliConn, dstConn); err != nil && !isUseOfClosedConn(err) {
-			logger.Error("Copy client -> dest:", err)
+			logger.Error("Copy", cliConn.RemoteAddr().String(), "->", originHost+":", err)
 		}
 		closeBoth()
 		return
@@ -554,7 +576,7 @@ func handleTunnel(
 
 	go func() {
 		if _, err := io.Copy(dstConn, cliConn); err != nil && !isUseOfClosedConn(err) {
-			logger.Error("Copy dest -> client:", err)
+			logger.Error("Copy", originHost, "->", cliConn.RemoteAddr().String()+":", err)
 		}
 		closeBoth()
 	}()
@@ -681,8 +703,8 @@ func getFromIPPool(tag string) (ipStr string, err error) {
 		return "", errors.New("ip pool " + tag + " is not exists")
 	}
 	ip := ipPool.Get()
-	if !ip.IsValid() {
+	if ip == "" {
 		return "", errors.New("cannot get ip from " + tag)
 	}
-	return ip.String(), nil
+	return ip, nil
 }
