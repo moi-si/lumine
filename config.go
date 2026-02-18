@@ -182,6 +182,7 @@ func loadConfig(filePath string) (string, string, error) {
 		ipPools = conf.IPPools
 		for tag, pool := range ipPools {
 			logger := log.New(os.Stdout, "<"+tag+">", log.LstdFlags, logLevel)
+			logger.Info("Testing...")
 			if err := pool.Init(logger); err != nil {
 				return "", "", fmt.Errorf("init ip pool %s: %w", tag, err)
 			}
@@ -268,7 +269,9 @@ func loadConfig(filePath string) (string, string, error) {
 				return dialer.Dial(network, addr)
 			}
 		}
-		httpCli = &http.Client{Transport: &http.Transport{DialContext: dialContext}}
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.DialContext = dialContext
+		httpCli = &http.Client{Transport: transport}
 		dnsExchange = dohExchange
 	} else {
 		dnsExchange = do53Exchange
@@ -315,6 +318,9 @@ func (c *myConn) Write(b []byte) (n int, err error) {
 	}
 	if dohConnPolicy.TLS13Only == BoolTrue && !hasKeyShare {
 		return 0, errors.New("not a TLS 1.3 ClientHello")
+	}
+	if sniPos == -1 {
+		return c.Conn.Write(b)
 	}
 	switch dohConnPolicy.Mode {
 	case ModeDirect, ModeRaw:
