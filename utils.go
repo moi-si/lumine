@@ -581,7 +581,7 @@ func handleTunnel(
 		closeBoth()
 	}()
 	if _, err := io.Copy(cliConn, dstConn); err != nil && !isUseOfClosedConn(err) {
-		logger.Error("Copy client -> dest:", err)
+		logger.Error("Copy", cliConn.RemoteAddr().String(), "->", originHost+":", err)
 	}
 	closeBoth()
 }

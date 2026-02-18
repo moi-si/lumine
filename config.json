@@ -103,7 +103,7 @@
             "host": "199.232.137.164"
         },
         "*(google.com|google.com.hk|gmail.com|google.dev|googleapis.com|gstatic.com|googleusercontent.com|.google|goo.gl|translate.goog|android.com|ai.dev|blogger.com|blogspot.com|blogblog.com|chrome.com|chromium.org|golang.org|youtube.com|youtu.be|youtube-nocookie.com|.ytimg.com|.ggpht.com|gvt1.com|withgoogle.com|googlesource.com)": {
-            "host": "142.250.20.90",
+            "host": "^142.250.20.90",
             "tls13_only": true,
             "http_status": 302
         },
