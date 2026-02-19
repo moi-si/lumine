@@ -190,6 +190,7 @@ func forwardHTTPRequest(logger *log.Logger, w http.ResponseWriter, originReq *ht
 	resp, err := transport.RoundTrip(outReq)
 	if err != nil {
 		logger.Error("Transport:", err)
+		return
 	}
 	defer resp.Body.Close()
 
