@@ -21,9 +21,9 @@ import (
 const (
 	tagPrefix             = "$"
 	defaultTimeout        = 2 * time.Second
-	defaultUpdateInterval = 5 * time.Minute
-	defaultMaxConcurrency = 30
-	defaultTopIPCount     = 5
+	defaultUpdateInterval = 30 * time.Minute
+	defaultMaxConcurrency = 100
+	defaultTopIPCount     = 3
 	defaultAttempts       = 4
 	maxIPPoolSize         = 1000
 	weightScaleFactor     = 10000.0
