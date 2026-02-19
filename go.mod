@@ -10,7 +10,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/elastic/go-freelru v0.16.0
 	github.com/miekg/dns v1.1.72
-	github.com/moi-si/addrtrie v0.2.2
+	github.com/moi-si/addrtrie v0.3.0
 	github.com/moi-si/mylog v0.2.0
 	golang.org/x/net v0.50.0
 )

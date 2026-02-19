@@ -49,8 +49,8 @@ var (
 	dnsAddr       string
 	calcTTL       func(int) (int, error)
 	domainMatcher *addrtrie.DomainMatcher[*Policy]
-	ipMatcher     *addrtrie.BitTrie[*Policy]
-	ipv6Matcher   *addrtrie.BitTrie6[*Policy]
+	ipMatcher     *addrtrie.IPv4Trie[*Policy]
+	ipv6Matcher   *addrtrie.IPv6Trie[*Policy]
 )
 
 type rule struct {
@@ -238,8 +238,8 @@ func loadConfig(filePath string) (string, string, error) {
 		}
 	}
 
-	ipMatcher = addrtrie.NewBitTrie[*Policy]()
-	ipv6Matcher = addrtrie.NewBitTrie6[*Policy]()
+	ipMatcher = addrtrie.NewIPv4Trie[*Policy]()
+	ipv6Matcher = addrtrie.NewIPv6Trie[*Policy]()
 	for patterns, policy := range conf.IpPolicies {
 		for elem := range strings.SplitSeq(patterns, ";") {
 			for _, ipOrNet := range expandPattern(elem) {

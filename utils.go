@@ -6,9 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/big"
 	"net"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"strings"
 	"syscall"
@@ -218,71 +218,63 @@ func splitByPipe(s string) []string {
 }
 
 func transformIP(ipStr string, targetNetStr string) (string, error) {
-	ip := net.ParseIP(ipStr)
-	if ip == nil {
+	ip, err := netip.ParseAddr(ipStr)
+	if err != nil {
 		return "", errors.New("invalid IP")
 	}
-	_, targetNet, err := net.ParseCIDR(targetNetStr)
+
+	prefix, err := netip.ParsePrefix(targetNetStr)
 	if err != nil {
 		return "", fmt.Errorf("invalid target network: %w", err)
 	}
 
-	isIPv4 := ip.To4() != nil
-	isIPv4Target := targetNet.IP.To4() != nil
-	if (isIPv4 && !isIPv4Target) || (!isIPv4 && isIPv4Target) {
+	if ip.Is4() != prefix.Addr().Is4() {
 		return "", errors.New("IP version mismatch between source IP and target network")
 	}
 
-	var maxLen int
-	if isIPv4 {
-		maxLen = 32
-	} else {
-		maxLen = 128
-	}
+	networkAddr := prefix.Masked().Addr()
+	bits := prefix.Bits()
 
-	prefixLen, _ := targetNet.Mask.Size()
+	var newIP netip.Addr
+	if ip.Is4() {
+		ipBytes := ip.As4()
+		netBytes := networkAddr.As4()
+		var newBytes [4]byte
 
-	hostBits := maxLen - prefixLen
-
-	fullMask := new(big.Int).Sub(
-		new(big.Int).Lsh(big.NewInt(1), uint(maxLen)),
-		big.NewInt(1),
-	)
-
-	hostMask := new(big.Int).Sub(
-		new(big.Int).Lsh(big.NewInt(1), uint(hostBits)),
-		big.NewInt(1),
-	)
-	networkMask := new(big.Int).Xor(fullMask, hostMask)
-	toBigInt := func(ip net.IP) *big.Int {
-		if isIPv4 {
-			ip = ip.To4()
-		} else {
-			ip = ip.To16()
+		for i := range 4 {
+			bitPos := uint8(i * 8)
+			if bits >= int(bitPos+8) {
+				newBytes[i] = netBytes[i]
+			} else if bits <= int(bitPos) {
+				newBytes[i] = ipBytes[i]
+			} else {
+				maskBits := uint8(bits) - bitPos
+				mask := uint8(0xFF << (8 - maskBits))
+				newBytes[i] = (netBytes[i] & mask) | (ipBytes[i] & ^mask)
+			}
 		}
-		return new(big.Int).SetBytes(ip)
+		newIP = netip.AddrFrom4(newBytes)
+	} else {
+		ipBytes := ip.As16()
+		netBytes := networkAddr.As16()
+		var newBytes [16]byte
+
+		for i := range 16 {
+			bitPos := uint8(i * 8)
+			if bits >= int(bitPos+8) {
+				newBytes[i] = netBytes[i]
+			} else if bits <= int(bitPos) {
+				newBytes[i] = ipBytes[i]
+			} else {
+				maskBits := uint8(bits) - bitPos
+				mask := uint8(0xFF << (8 - maskBits))
+				newBytes[i] = (netBytes[i] & mask) | (ipBytes[i] & ^mask)
+			}
+		}
+		newIP = netip.AddrFrom16(newBytes)
 	}
 
-	ipInt := toBigInt(ip)
-	netInt := toBigInt(targetNet.IP)
-
-	newIPInt := new(big.Int).Or(
-		new(big.Int).And(netInt, networkMask),
-		new(big.Int).And(ipInt, hostMask),
-	)
-
-	expectedLen := 4
-	if !isIPv4 {
-		expectedLen = 16
-	}
-	newIPBytes := newIPInt.Bytes()
-	if len(newIPBytes) < expectedLen {
-		padded := make([]byte, expectedLen)
-		copy(padded[expectedLen-len(newIPBytes):], newIPBytes)
-		newIPBytes = padded
-	}
-
-	return net.IP(newIPBytes).String(), nil
+	return newIP.String(), nil
 }
 
 func ipRedirect(logger *log.Logger, ip string) (string, *Policy, error) {
@@ -628,6 +620,9 @@ func genPolicy(logger *log.Logger, originHost string) (dstHost string, p Policy,
 		} else {
 			logger.Info("DNS:", originHost, "->", dstHost)
 		}
+	} else if *p.Host == "self" {
+		dstHost = originHost
+		logger.Info("Host:", dstHost)
 	} else {
 		if disableRedirect {
 			dstHost = (*p.Host)[1:]

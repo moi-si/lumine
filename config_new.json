@@ -213,10 +213,12 @@
             "num_segs": 4
         },
         "*bing.(com|net);*microsoft(|online).com;*(live|msn|skype).com;*office.(com|net);*(mozilla.com|mozilla.net|mozilla.org|firefox.com|firefox.com.cn|mozgcp.net)": {
-            "mode": "raw"
+            "mode": "raw",
+            "host": "self"
         },
         "ocsp-certum.com;ocsp.sectigo.com;ocsp.digicert.c(om|n);ocsps.ssl.com;*amazontrust.com;ocsp.comodoca.com;o.pki.goog;safebrowsing.googleapis.com;dl.google.com;chomium.org": {
-            "mode": "raw"
+            "mode": "raw",
+            "host": "self"
         },
         "imp.pixiv.net;nav-edge.smartscreen.microsoft.com;collector.github.com;*ads.nicovideo.jp;browser.events.data.msn.cn": {
             "mode": "block"
