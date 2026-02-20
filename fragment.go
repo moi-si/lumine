@@ -7,20 +7,26 @@ import (
 	"time"
 )
 
-func sendRecords(conn net.Conn, data []byte,
+func sendRecords(conn net.Conn, clientHello []byte,
 	offset, length, records, segments int,
 	oob, modMinorVer bool, interval time.Duration) error {
 	if modMinorVer {
-		data[2] = 0x04
+		clientHello[2] = 0x04
 	}
 
 	if records == 1 && segments > 1 {
-		rightSegments := segments / 2
-		leftSegments := segments - rightSegments
+		var leftSegments, rightSegments int
+		if segments == 2 {
+			leftSegments = 1
+			rightSegments = 1
+		} else {
+			leftSegments = 2
+			rightSegments = segments - leftSegments
+		}
 		packets := make([][]byte, 0, segments)
-		cut, _ := findLastDot(data, offset, length)
-		splitAndAppend(data[:cut], nil, leftSegments, &packets)
-		splitAndAppend(data[cut:], nil, rightSegments, &packets)
+		cut, _ := findLastDot(clientHello, offset, length)
+		splitAndAppend(clientHello[:cut], nil, leftSegments, &packets)
+		splitAndAppend(clientHello[cut:], nil, rightSegments, &packets)
 		for i, packet := range packets {
 			if _, err := conn.Write(packet); err != nil {
 				return fmt.Errorf("write packet %d: %w", i+1, err)
@@ -37,13 +43,19 @@ func sendRecords(conn net.Conn, data []byte,
 		return nil
 	}
 
-	rightChunks := records / 2
-	leftChunks := records - rightChunks
+	var leftChunks, rightChunks int
+	if records == 2 {
+		leftChunks = 1
+		rightChunks = 1
+	} else {
+		leftChunks = 2
+		rightChunks = records - leftChunks
+	}
 	chunks := make([][]byte, 0, records)
-	cut, _ := findLastDot(data, offset, length)
-	header := data[:3]
-	splitAndAppend(data[5:cut], header, leftChunks, &chunks)
-	splitAndAppend(data[cut:], header, rightChunks, &chunks)
+	cut, _ := findLastDot(clientHello, offset, length)
+	header := clientHello[:3]
+	splitAndAppend(clientHello[5:cut], header, leftChunks, &chunks)
+	splitAndAppend(clientHello[cut:], header, rightChunks, &chunks)
 
 	if segments == -1 {
 		for i, chunk := range chunks {
@@ -62,11 +74,7 @@ func sendRecords(conn net.Conn, data []byte,
 		return nil
 	}
 
-	total := 0
-	for _, c := range chunks {
-		total += len(c)
-	}
-	merged := make([]byte, 0, total)
+	merged := make([]byte, 0, records*3+len(clientHello))
 	for _, c := range chunks {
 		merged = append(merged, c...)
 	}
@@ -84,11 +92,11 @@ func sendRecords(conn net.Conn, data []byte,
 			end = len(merged)
 		}
 		if _, err := conn.Write(merged[start:end]); err != nil {
-			return fmt.Errorf("write segment %d: %s", i+1, err)
+			return fmt.Errorf("write segment %d: %w", i+1, err)
 		}
 		if i == 0 && oob {
 			if err := sendOOB(conn); err != nil {
-				return fmt.Errorf("oob: %s", err)
+				return fmt.Errorf("oob: %w", err)
 			}
 		}
 		if interval > 0 {
