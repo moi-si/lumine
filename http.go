@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -177,19 +178,145 @@ func handleConnect(logger *log.Logger, w http.ResponseWriter, req *http.Request)
 }
 
 func forwardHTTPRequest(logger *log.Logger, w http.ResponseWriter, originReq *http.Request) {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.Proxy = nil
+	host := originReq.Host
+	if host == "" {
+		host = originReq.URL.Host
+	}
+	if host == "" {
+		logger.Error("Cannot determine target host")
+		http.Error(w, "400 Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	originHost, port, err := net.SplitHostPort(host)
+	if err != nil {
+		originHost = host
+		if originReq.URL.Scheme == "https" {
+			port = "443"
+		} else {
+			port = "80"
+		}
+	}
+
+	logger.Info(originReq.Method, originReq.URL, "to", host)
+
+	var p Policy
+	if domainPolicy, exists := domainMatcher.Find(originHost); exists {
+		p = mergePolicies(domainPolicy, &defaultPolicy)
+	} else {
+		p = defaultPolicy
+	}
+
+	if p.Host != nil && *p.Host != "" {
+		if (*p.Host)[0] != '^' {
+			_, ipPolicy, err := ipRedirect(logger, *p.Host)
+			if err != nil {
+				logger.Error("IP redirect:", err)
+				http.Error(w, status500, http.StatusInternalServerError)
+				return
+			}
+			if ipPolicy != nil {
+				p = mergePolicies(&p, ipPolicy, &defaultPolicy)
+			}
+		}
+	}
+
+	if p.HttpStatus != 0 && p.HttpStatus != -1 {
+		if p.HttpStatus == 301 || p.HttpStatus == 302 {
+			scheme := originReq.URL.Scheme
+			if scheme == "" {
+				scheme = "https"
+			}
+			location := scheme + "://" + host + originReq.URL.RequestURI()
+			w.Header().Set("Location", location)
+		}
+		w.WriteHeader(p.HttpStatus)
+		logger.Info("Sent", p.HttpStatus, http.StatusText(p.HttpStatus))
+		return
+	}
+
+	if p.Mode == ModeBlock {
+		logger.Info("Connection blocked")
+		http.Error(w, status403, http.StatusForbidden)
+		return
+	}
+
+	dstHost := originHost
+	dstPort := port
+
+	if p.Host != nil && *p.Host != "" {
+		if *p.Host == "self" {
+			dstHost = originHost
+			logger.Info("Host:", dstHost)
+		} else if strings.HasPrefix(*p.Host, "^") {
+			dstHost = (*p.Host)[1:]
+		} else {
+			dstHost = *p.Host
+			if strings.HasPrefix(dstHost, tagPrefix) {
+				if dstHost, err = getFromIPPool(dstHost[1:]); err != nil {
+					logger.Error(err)
+					http.Error(w, status500, http.StatusInternalServerError)
+					return
+				}
+				logger.Info("Host:", *p.Host, "->", dstHost)
+			} else {
+				logger.Info("Host:", *p.Host)
+			}
+		}
+	}
+
+	if p.Port != 0 && p.Port != -1 {
+		dstPort = strconv.FormatInt(int64(p.Port), 10)
+	}
+
+	disableRedirect := p.Host != nil && strings.HasPrefix(*p.Host, "^")
+	if !disableRedirect {
+		var ipPolicy *Policy
+		dstHost, ipPolicy, err = ipRedirect(logger, dstHost)
+		if err != nil {
+			logger.Error("IP redirect:", err)
+			http.Error(w, status500, http.StatusInternalServerError)
+			return
+		}
+		if ipPolicy != nil {
+			p = mergePolicies(&p, ipPolicy, &defaultPolicy)
+			if p.Mode == ModeBlock {
+				http.Error(w, status403, http.StatusForbidden)
+				return
+			}
+		}
+	}
+
 	outReq := originReq.Clone(context.Background())
-	outReq.Host = outReq.URL.Host
+	
+	targetAddr := net.JoinHostPort(dstHost, dstPort)
+	outReq.URL.Host = targetAddr
+	outReq.Host = targetAddr
+	
+	if outReq.URL.Scheme == "" {
+		outReq.URL.Scheme = "http"
+	}
+	
 	outReq.Header.Del("Proxy-Authorization")
 	outReq.Header.Del("Proxy-Connection")
 	if outReq.Header.Get("Connection") == "" {
 		outReq.Header.Set("Connection", "close")
 	}
 
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+
+	if p.ConnectTimeout > 0 {
+		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			d := net.Dialer{Timeout: p.ConnectTimeout}
+			return d.DialContext(ctx, network, addr)
+		}
+	}
+
 	resp, err := transport.RoundTrip(outReq)
 	if err != nil {
 		logger.Error("Transport:", err)
+		http.Error(w, "502 Bad Gateway", http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close()
@@ -198,6 +325,6 @@ func forwardHTTPRequest(logger *log.Logger, w http.ResponseWriter, originReq *ht
 	w.WriteHeader(resp.StatusCode)
 
 	if _, err = io.Copy(w, resp.Body); err != nil {
-		logger.Error("Copying response body:", err)
+		logger.Error("Copy response body:", err)
 	}
 }
