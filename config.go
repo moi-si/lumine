@@ -275,7 +275,7 @@ func loadConfig(filePath string) (string, string, error) {
 		dnsExchange = dohExchange
 	} else {
 		dnsExchange = do53Exchange
-		if conf.UDPSize == 0 {
+		if conf.UDPSize <= 0 {
 			dnsClient = new(dns.Client)
 		} else {
 			dnsClient = &dns.Client{UDPSize: conf.UDPSize}

@@ -1,4 +1,7 @@
 # lumine
+
+[简体中文](./README_zh.md)
+
 A lightweight local HTTP/SOCKS5 proxy server that protects TLS connections over TCP.
 
 ## Installation
@@ -15,56 +18,9 @@ cd lumine
 go build
 ```
 
-## Configuration
-### Top-Level Fields
-Field|Description|Example|Special Values
--|-|-|-
-`log_level`|Log level|`"DEBUG"`, `"INFO"`, `"ERROR"`|-
-`socks5_address`|SOCKS5 bind address|`"127.0.0.1:1080"`|`"none"` disables SOCKS5 proxy
-`http_address`|HTTP bind address|`":1225"`|`"none"` disables HTTP proxy
-`dns_addr`|DNS over UDP/HTTPS server address for resolution|`"127.0.0.1:8053"`, `"https://1.1.1.1/dns-query"`|-
-`udp_minsize`|Minimum UDP packet size for DNS queries|`4096`|`0` uses default DNS client size (may cause error)
-`socks5_for_doh`|SOCKS5 proxy server address for DoH|`"127.0.0.1:1080"`|Empty string disables proxy and enables DoH policy
-`max_jump`|Maximum redirect chain length for IP mapping|`30`|`0` defaults to 20
-`fake_ttl_rules`|TTL calculation rules for fake packets|`"0-1;3=3;5-1;8-2;13-3;20=18"`|Empty string disables TTL rules
-`transmit_file_limit`|Maximum concurrent TransmitFile operations|`2`|`0` or negative means no limit (unrestricted concurrency)
-`dns_cache_ttl`|How long a DNS answer is kept in the in‑memory cache (seconds)|`259200`|`0` disables DNS caching entirely
-`dns_cache_cap`|Maximum number of entries in the in‑memory DNS cache|`4096`|-
-`ttl_cache_ttl`|How long a minimum reachable TTL is kept in the in‑memory cache (seconds)|`259200`|`0` disables TTL caching entirely
-`ttl_cache_cap`|Maximum number of entries in the in‑memory TTL cache|`1024`|-
-`default_policy`|Default policy applied to all connections|See Policy fields below|-
-`domain_policy`|Domain-specific policies|See Policy fields below|-
-`ip_policy`|IP/CIDR-specific policies|See Policy fields below|-
-### Policy Fields
-Field|Description|Example|Special Values
--|-|-|-
-`dns_mode`|Selects the DNS query strategy, determining which record type is requested and whether a fallback to the other type is performed|`"prefer_ipv4"`, `"prefer_ipv6"`, `"ipv4_only"`, `"ipv6_only"`|-
-`connect_timeout`|Maximum time to wait for a connection to be established|`"10s"`|-
-`reply_first`|Send SOCKS5 reply SUCCESS before connecting|`true`|-
-`host`|Override target host|`"^208.103.161.2"`, `"www.visa.cn"`|Prefix `^` disables IP redirection
-`map_to`|Redirect IP to another host/CIDR|`"35.180.16.12"`, `"^www.fbi.org"`|Prefix `^` disables chain jump
-`port`|Override target port|`8443`|`0` uses original port
-`http_status`|HTTP status code to return instead of forwarding|`301`|`0` means forward normally
-`tls13_only`|Restrict to TLS 1.3 only|`true`|-
-`mode`|Traffic manipulation mode|`"tls-rf"`|See Mode Values below
-`num_records`|Number of TLS records for fragmentation|`10`|`1` disables fragmentation
-`num_segs`|Number of segments for TCP fragmentation|`3`|`1` disables segment splitting; when `-1`, send 1 record each time
-`oob`|Attach Out-Of-Band (OOB) data to the end of the first TCP packet|`true`|-
-`send_interval`|Interval between sending segments|`"200ms"`|`0s` means no delay
-`fake_ttl`|TTL value for fake packets in `ttl-d` mode|`17`|`0` enables auto TTL detection
-`fake_sleep`|Sleep time after sending fake packet|`"200ms"`|-
-`attempts`|Number of connection attempts the resolver makes for each tested TTL value when probing the minimum reachable TTL|`2`|-
-`max_ttl`|Upper bound of the TTL range (in hops) that will be searched; the algorithm performs a binary‑search between 1 and this value|`64`|-
-`single_timeout`|Per‑attempt TCP dial timeout used while testing each TTL candidate|`"500ms"`|-
-### Mode  Values
-Mode|Description|Used For
--|-|-
-`raw`|Raw TCP forwarding after SOCKS5|Minimal overhead
-`direct`|Pass-through without manipulation|General traffic
-`tls-rf`|TLS record fragmentation|TLS connections
-`ttl-d`|TTL-based desynchronization with fake packets|TLS connections
-`block`|Block connection entirely|Connection termination
-`tls-alert`|Send TLS alert and terminate connection|TLS connection termination
+## Document
+
+[https://github.com/moi-si/lumine/wiki/Document](https://github.com/moi-si/lumine/wiki/Document)
 
 # Acknowledgements
 
