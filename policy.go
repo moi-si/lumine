@@ -269,7 +269,7 @@ func (p Policy) String() string {
 	if p.ConnectTimeout != 0 {
 		fields = append(fields, "timeout="+p.ConnectTimeout.String())
 	}
-	if  p.Port != unsetInt && p.Port != 0 {
+	if p.Port != unsetInt && p.Port != 0 {
 		fields = append(fields, ":"+strconv.FormatInt(int64(p.Port), 10))
 	}
 	if p.Host == nil || *p.Host == "" {

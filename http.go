@@ -288,15 +288,15 @@ func forwardHTTPRequest(logger *log.Logger, w http.ResponseWriter, originReq *ht
 	}
 
 	outReq := originReq.Clone(context.Background())
-	
+
 	targetAddr := net.JoinHostPort(dstHost, dstPort)
 	outReq.URL.Host = targetAddr
 	outReq.Host = targetAddr
-	
+
 	if outReq.URL.Scheme == "" {
 		outReq.URL.Scheme = "http"
 	}
-	
+
 	outReq.Header.Del("Proxy-Authorization")
 	outReq.Header.Del("Proxy-Connection")
 	if outReq.Header.Get("Connection") == "" {
