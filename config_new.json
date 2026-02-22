@@ -14,14 +14,11 @@
     "ip_pools": {
         "cloudflare": {
             "ips": ["www.visa.cn", "www.ietf.org", "fbi.gov"],
-            "port": 443,
-            "update_interval": "20m"
+            "port": 443
         },
         "cloudfront": {
             "ips": ["108.158.4.0/24", "futuregadget-lab.com"],
-            "port": 443,
-            "update_interval": "20m",
-            "max_concurrency": 40
+            "port": 443
         },
         "gws": {
             "ips": [
@@ -29,8 +26,7 @@
                 "142.251.(98|106|119).90",
                 "(142.250.20|172.253.144|192.178.169).90"
             ],
-            "port": 443,
-            "update_interval": "20m"
+            "port": 443
         },
         "netlify": {
             "ips": [
@@ -45,13 +41,11 @@
                 "18.208.88.157"
             ],
             "port": 443,
-            "update_interval": "20m",
             "top_ip_count": 3
         },
         "archive": {
             "ips": ["207.241.225.(119|120|195)"],
             "port": 443,
-            "update_interval": "20m",
             "top_ip_count": 1
         },
         "vercel": {
@@ -59,8 +53,20 @@
                 "(216.198.79|64.29.17|66.33.60).(1|2|3|65|66|67|129|130|131|194|195)",
                 "76.76.21.(9|21|22|61|75|93|98|100|101|102|103|104|105|106|107|108|109|110|111|112|113|114|115|116|117|123|142|164|200|201|202|203|216|241)"
             ],
-            "port": 443,
-            "update_interval": "20m"
+            "port": 443
+        },
+        "github": {
+            "ips": [
+                "140.82.(112|113|114|121).(3|4)",
+                "4.228.31.150",
+                "4.237.22.38",
+                "4.208.26.197",
+                "20.200.245.247",
+                "20.26.156.215",
+                "20.207.73.82",
+                "20.27.177.113"
+            ],
+            "port": 443
         }
     },
     "default_policy": {
@@ -95,7 +101,8 @@
         "76.223.126.88;(216.150.1|216.150.16|216.198.79|216.230.84|216.230.86|64.29.17|76.76.21|66.33.60|198.169.1|198.169.2|64.239.109|64.239.123).0/24;64.125.81.216/29": {
             "map_to": "$vercel",
             "num_records": 1,
-            "num_segs": 3
+            "num_segs": 3,
+            "oob": true
         },
         "(151.101|146.75|199.232).0.0/16": {
             "map_to": "146.75.48.0/22"
@@ -108,9 +115,6 @@
             "mode": "tls-rf",
             "num_records": 1,
             "num_segs": 3
-        },
-        "77.88.8.8": {
-            "mode": "raw"
         }
     },
     "domain_policies": {
@@ -210,7 +214,8 @@
         "*vercel.app": {
             "host": "^$vercel",
             "num_records": 1,
-            "num_segs": 4
+            "num_segs": 4,
+            "oob": true
         },
         "*bing.(com|net);*microsoft(|online).com;*(live|msn|skype).com;*office.(com|net);*(mozilla.com|mozilla.net|mozilla.org|firefox.com|firefox.com.cn|mozgcp.net)": {
             "mode": "raw",
