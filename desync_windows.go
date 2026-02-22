@@ -187,14 +187,14 @@ func desyncSend(
 ) error {
 	rawConn, err := getRawConn(conn)
 	if err != nil {
-		return fmt.Errorf("get rawConn: %s", err)
+		return fmt.Errorf("get rawConn: %w", err)
 	}
 	var sockHandle windows.Handle
 	controlErr := rawConn.Control(func(fd uintptr) {
 		sockHandle = windows.Handle(fd)
 	})
 	if controlErr != nil {
-		return fmt.Errorf("control: %s", err)
+		return fmt.Errorf("control: %w", err)
 	}
 
 	var level, opt int
@@ -207,7 +207,7 @@ func desyncSend(
 	}
 	defaultTTL, err := windows.GetsockoptInt(sockHandle, level, opt)
 	if err != nil {
-		return fmt.Errorf("get default TTL: %s", err)
+		return fmt.Errorf("get default TTL: %w", err)
 	}
 
 	if fakeSleep < minInterval {
@@ -235,7 +235,7 @@ func desyncSend(
 		fakeSleep,
 	)
 	if err != nil {
-		return fmt.Errorf("first sending: %s", err)
+		return fmt.Errorf("first sending: %w", err)
 	}
 	/*err = sendFakeData(
 		sockHandle,
@@ -248,7 +248,7 @@ func desyncSend(
 		fakeSleep,
 	)*/
 	if _, err = conn.Write(firstPacket[cut:]); err != nil {
-		return fmt.Errorf("second sending: %s", err)
+		return fmt.Errorf("second sending: %w", err)
 	}
 	return nil
 }
@@ -256,7 +256,7 @@ func desyncSend(
 func sendOOB(conn net.Conn) error {
 	rawConn, err := getRawConn(conn)
 	if err != nil {
-		return fmt.Errorf("get raw conn: %s", err)
+		return fmt.Errorf("get raw conn: %w", err)
 	}
 
 	var sock windows.Handle
@@ -264,10 +264,10 @@ func sendOOB(conn net.Conn) error {
 		sock = windows.Handle(fd)
 	})
 	if controlErr != nil {
-		return fmt.Errorf("control: %s", controlErr)
+		return fmt.Errorf("control: %w", controlErr)
 	}
 	if sock == 0 {
-		return fmt.Errorf("invalid socket handle")
+		return errors.New("invalid socket handle")
 	}
 
 	var (
@@ -288,7 +288,7 @@ func sendOOB(conn net.Conn) error {
 		nil,             // lpCompletionRoutine
 	)
 	if err != nil {
-		return fmt.Errorf("WSASend: %s", err)
+		return fmt.Errorf("WSASend: %w", err)
 	}
 	if bytesSent != wsabuf.Len {
 		return fmt.Errorf("WSASend: only %d of %d bytes sent", bytesSent, wsabuf.Len)
