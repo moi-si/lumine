@@ -225,7 +225,7 @@ func transformIP(ipStr string, targetNetStr string) (string, error) {
 
 	prefix, err := netip.ParsePrefix(targetNetStr)
 	if err != nil {
-		return "", fmt.Errorf("invalid target network: %w", err)
+		return "", wrap("invalid target network", err)
 	}
 
 	if ip.Is4() != prefix.Addr().Is4() {
@@ -702,4 +702,24 @@ func getFromIPPool(tag string) (ipStr string, err error) {
 		return "", errors.New("cannot get ip from " + tag)
 	}
 	return ip, nil
+}
+
+type WrappedError struct {
+	msg   string
+	cause error
+}
+
+func (e WrappedError) Error() string {
+	return e.msg + ": " + e.cause.Error()
+}
+
+func (e WrappedError) Unwarp() error {
+	return e.cause
+}
+
+func wrap(msg string, cause error) error {
+	return &WrappedError{
+		msg:   msg,
+		cause: cause,
+	}
 }

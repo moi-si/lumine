@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -43,7 +44,7 @@ func minReachableTTL(addr string, ipv6 bool, maxTTL, attempts int, dialTimeout t
 				sockErr = windows.SetsockoptInt(windows.Handle(fd), level, opt, mid)
 			})
 			if err != nil {
-				return fmt.Errorf("control: %w", err)
+				return wrap("control", err)
 			}
 			return sockErr
 		}
@@ -96,21 +97,21 @@ func sendFakeData(
 	)
 	defer windows.CloseHandle(fileHandle)
 	if err != nil {
-		return fmt.Errorf("create file: %w", err)
+		return wrap("create file", err)
 	}
 
 	var ov windows.Overlapped
 	eventHandle, err := windows.CreateEvent(nil, 1, 0, nil)
 	defer windows.CloseHandle(eventHandle)
 	if err != nil {
-		return fmt.Errorf("create event: %w", err)
+		return wrap("create event", err)
 	}
 	ov.HEvent = eventHandle
 
 	var zero *int32
 	_, err = windows.SetFilePointer(fileHandle, 0, zero, 0)
 	if err != nil {
-		return fmt.Errorf("set file pointer: %w", err)
+		return wrap("set file pointer", err)
 	}
 	err = windows.WriteFile(
 		fileHandle,
@@ -119,19 +120,19 @@ func sendFakeData(
 		&ov,
 	)
 	if err != nil {
-		return fmt.Errorf("write fake data: %w", err)
+		return wrap("write fake data", err)
 	}
 	if err = windows.SetEndOfFile(fileHandle); err != nil {
-		return fmt.Errorf("set end of file: %w", err)
+		return wrap("set end of file", err)
 	}
 	err = windows.SetsockoptInt(sockHandle, level, opt, fakeTTL)
 	if err != nil {
-		return fmt.Errorf("set fake TTL: %w", err)
+		return wrap("set fake TTL", err)
 	}
 
 	_, err = windows.SetFilePointer(fileHandle, 0, zero, 0)
 	if err != nil {
-		return fmt.Errorf("set file pointer: %w", err)
+		return wrap("set file pointer", err)
 	}
 	if sem != nil {
 		sem <- struct{}{}
@@ -146,10 +147,10 @@ func sendFakeData(
 		nil,
 		windows.TF_USE_KERNEL_APC|windows.TF_WRITE_BEHIND,
 	)
-	time.Sleep(time.Duration(fakeSleep))
+	time.Sleep(fakeSleep)
 
 	if _, err = windows.SetFilePointer(fileHandle, 0, zero, 0); err != nil {
-		return fmt.Errorf("set file pointer: %w", err)
+		return wrap("set file pointer", err)
 	}
 	err = windows.WriteFile(
 		fileHandle,
@@ -158,25 +159,25 @@ func sendFakeData(
 		&ov,
 	)
 	if err != nil {
-		return fmt.Errorf("write real data to temp: %w", err)
+		return wrap("write real data to temp", err)
 	}
 	if err = windows.SetEndOfFile(fileHandle); err != nil {
-		return fmt.Errorf("set end of file: %w", err)
+		return wrap("set end of file", err)
 	}
 	_, err = windows.SetFilePointer(fileHandle, 0, zero, 0)
 	if err != nil {
-		return fmt.Errorf("set file pointer: %w", err)
+		return wrap("set file pointer", err)
 	}
 	if err = windows.SetsockoptInt(sockHandle, level, opt, defaultTTL); err != nil {
-		return fmt.Errorf("set default TTL: %w", err)
+		return wrap("set default TTL", err)
 	}
 
 	val, err := windows.WaitForSingleObject(ov.HEvent, 5000)
 	if err != nil {
-		return fmt.Errorf("TransmitFile call failed on waiting for event: %w", err)
+		return wrap("TransmitFile call failed on waiting for event", err)
 	}
 	if val != 0 {
-		return errors.New("TransmitFile call failed")
+		return errors.New("TransmitFile call failed, val="+strconv.FormatUint(uint64(val), 10))
 	}
 	return nil
 }
@@ -187,14 +188,14 @@ func desyncSend(
 ) error {
 	rawConn, err := getRawConn(conn)
 	if err != nil {
-		return fmt.Errorf("get rawConn: %w", err)
+		return wrap("get raw conn", err)
 	}
 	var sockHandle windows.Handle
 	controlErr := rawConn.Control(func(fd uintptr) {
 		sockHandle = windows.Handle(fd)
 	})
 	if controlErr != nil {
-		return fmt.Errorf("control: %w", err)
+		return wrap("control", err)
 	}
 
 	var level, opt int
@@ -207,7 +208,7 @@ func desyncSend(
 	}
 	defaultTTL, err := windows.GetsockoptInt(sockHandle, level, opt)
 	if err != nil {
-		return fmt.Errorf("get default TTL: %w", err)
+		return wrap("get default TTL", err)
 	}
 
 	if fakeSleep < minInterval {
@@ -235,7 +236,7 @@ func desyncSend(
 		fakeSleep,
 	)
 	if err != nil {
-		return fmt.Errorf("first sending: %w", err)
+		return wrap("first sending", err)
 	}
 	/*err = sendFakeData(
 		sockHandle,
@@ -248,7 +249,7 @@ func desyncSend(
 		fakeSleep,
 	)*/
 	if _, err = conn.Write(firstPacket[cut:]); err != nil {
-		return fmt.Errorf("second sending: %w", err)
+		return wrap("second sending", err)
 	}
 	return nil
 }
@@ -256,7 +257,7 @@ func desyncSend(
 func sendOOB(conn net.Conn) error {
 	rawConn, err := getRawConn(conn)
 	if err != nil {
-		return fmt.Errorf("get raw conn: %w", err)
+		return wrap("get raw conn", err)
 	}
 
 	var sock windows.Handle
@@ -264,7 +265,7 @@ func sendOOB(conn net.Conn) error {
 		sock = windows.Handle(fd)
 	})
 	if controlErr != nil {
-		return fmt.Errorf("control: %w", controlErr)
+		return wrap("control", controlErr)
 	}
 	if sock == 0 {
 		return errors.New("invalid socket handle")
@@ -288,7 +289,7 @@ func sendOOB(conn net.Conn) error {
 		nil,             // lpCompletionRoutine
 	)
 	if err != nil {
-		return fmt.Errorf("WSASend: %w", err)
+		return wrap("WSASend", err)
 	}
 	if bytesSent != wsabuf.Len {
 		return fmt.Errorf("WSASend: only %d of %d bytes sent", bytesSent, wsabuf.Len)

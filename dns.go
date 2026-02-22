@@ -75,30 +75,30 @@ func do53Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
 func dohExchange(req *dns.Msg) (resp *dns.Msg, err error) {
 	wire, err := req.Pack()
 	if err != nil {
-		return nil, fmt.Errorf("pack dns request: %w", err)
+		return nil, wrap("pack dns request", err)
 	}
 	b64 := base64.RawURLEncoding.EncodeToString(wire)
 	u := dnsAddr + "?dns=" + b64
 	httpReq, err := http.NewRequest(http.MethodGet, u, nil)
 	if err != nil {
-		return nil, fmt.Errorf("build http request: %w", err)
+		return nil, wrap("build http request", err)
 	}
 	httpReq.Header.Set("Accept", "application/dns-message")
 	httpResp, err := httpCli.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("http request: %w", err)
+		return nil, wrap("http request", err)
 	}
 	defer httpResp.Body.Close()
 	if httpResp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("bad http status: %s", httpResp.Status)
+		return nil, errors.New("bad http status: " + httpResp.Status)
 	}
 	respWire, err := io.ReadAll(httpResp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("read http body: %w", err)
+		return nil, wrap("read http body", err)
 	}
 	resp = new(dns.Msg)
 	if err = resp.Unpack(respWire); err != nil {
-		return nil, fmt.Errorf("unpack dns response: %w", err)
+		return nil, wrap("unpack dns response", err)
 	}
 	return
 }
@@ -138,7 +138,7 @@ func dnsResolve(domain string, dnsMode DNSMode) (ip string, cached bool, err err
 
 	resp, err := dnsExchange(msg)
 	if err != nil {
-		return "", false, fmt.Errorf("dns exchange: %w", err)
+		return "", false, wrap("dns exchange", err)
 	}
 	if resp.Rcode != dns.RcodeSuccess {
 		return "", false, errors.New("bad rcode: " + dns.RcodeToString[resp.Rcode])
@@ -164,7 +164,7 @@ func dnsResolve(domain string, dnsMode DNSMode) (ip string, cached bool, err err
 				return "", false, fmt.Errorf("dns exchange: %w; %w", err, err2)
 			}
 			if resp.Rcode != dns.RcodeSuccess {
-				return "", false, fmt.Errorf("bad rcode: %s", dns.RcodeToString[resp.Rcode])
+				return "", false, errors.New("bad rcode: " + dns.RcodeToString[resp.Rcode])
 			}
 			ip = pickFirstAAAARecord(resp.Answer)
 			if ip == "" {
@@ -180,7 +180,7 @@ func dnsResolve(domain string, dnsMode DNSMode) (ip string, cached bool, err err
 				return "", false, fmt.Errorf("dns exchange: %w; %w", err, err2)
 			}
 			if resp.Rcode != dns.RcodeSuccess {
-				return "", false, fmt.Errorf("bad rcode: %s", dns.RcodeToString[resp.Rcode])
+				return "", false, errors.New("bad rcode: " + dns.RcodeToString[resp.Rcode])
 			}
 			ip = pickFirstARecord(resp.Answer)
 			if ip == "" {

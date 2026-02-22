@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net"
 	"net/http"
 	"net/url"
@@ -184,7 +183,7 @@ func loadConfig(filePath string) (string, string, error) {
 			logger := log.New(os.Stdout, "<"+tag+">", log.LstdFlags, logLevel)
 			logger.Info("Testing...")
 			if err := pool.Init(logger); err != nil {
-				return "", "", fmt.Errorf("init ip pool %s: %w", tag, err)
+				return "", "", wrap("init ip pool "+tag, err)
 			}
 		}
 	}
@@ -198,7 +197,7 @@ func loadConfig(filePath string) (string, string, error) {
 		}
 		dnsCache, err = freelru.NewSharded[string, string](uint32(conf.DNSCacheCapacity), hashStringXXHASH)
 		if err != nil {
-			return "", "", fmt.Errorf("init dns cache: %w", err)
+			return "", "", wrap("init dns cache", err)
 		}
 		dnsCacheEnabled = true
 		dnsCacheTTL = time.Duration(conf.DNSCacheTTL) * time.Second
@@ -213,7 +212,7 @@ func loadConfig(filePath string) (string, string, error) {
 		}
 		ttlCache, err = freelru.NewSharded[string, int](uint32(conf.TTLCacheCapacity), hashStringXXHASH)
 		if err != nil {
-			return "", "", fmt.Errorf("init ttl cache: %w", err)
+			return "", "", wrap("init ttl cache", err)
 		}
 		ttlCacheEnabled = true
 		ttlCacheTTL = time.Duration(conf.TTLCacheTTL) * time.Second
@@ -222,7 +221,7 @@ func loadConfig(filePath string) (string, string, error) {
 	if conf.FakeTTLRules != "" {
 		err = loadFakeTTLRules(conf.FakeTTLRules)
 		if err != nil {
-			return "", "", fmt.Errorf("load fake ttl rules: %w", err)
+			return "", "", wrap("load fake ttl rules", err)
 		}
 		if runtime.GOOS == "windows" && conf.TransmitFileLimit > 0 {
 			sem = make(chan struct{}, conf.TransmitFileLimit)
@@ -263,7 +262,7 @@ func loadConfig(filePath string) (string, string, error) {
 		} else {
 			dialer, err := proxy.SOCKS5("tcp", conf.DoHProxy, nil, proxy.Direct)
 			if err != nil {
-				return "", "", fmt.Errorf("create socks5 dialer: %w", err)
+				return "", "", wrap("create socks5 dialer", err)
 			}
 			dialContext = func(_ context.Context, network, addr string) (net.Conn, error) {
 				return dialer.Dial(network, addr)
@@ -340,7 +339,7 @@ func (c *interceptConn) Write(b []byte) (n int, err error) {
 func genDialContext() (func(ctx context.Context, network, address string) (net.Conn, error), error) {
 	parsedURL, err := url.Parse(dnsAddr)
 	if err != nil {
-		return nil, fmt.Errorf("invalid DoH URL: %w", err)
+		return nil, wrap("invalid DoH URL", err)
 	}
 	host := parsedURL.Hostname()
 	dohConnPolicy = new(Policy)
@@ -354,7 +353,7 @@ func genDialContext() (func(ctx context.Context, network, address string) (net.C
 			dohConnPolicy = &p
 		}
 		if err != nil {
-			return nil, fmt.Errorf("ip redirect: %w", err)
+			return nil, wrap("ip redirect", err)
 		}
 	} else {
 		var disableRedirect bool
@@ -381,7 +380,7 @@ func genDialContext() (func(ctx context.Context, network, address string) (net.C
 				var ipPolicy *Policy
 				host, ipPolicy, err = ipRedirect(nil, host)
 				if err != nil {
-					return nil, fmt.Errorf("ip redirect: %w", err)
+					return nil, wrap("ip redirect", err)
 				}
 				if ipPolicy != nil {
 					var p Policy

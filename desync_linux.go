@@ -3,7 +3,7 @@
 package main
 
 import (
-	"fmt"
+	"errors"
 	"net"
 	"syscall"
 	"time"
@@ -40,7 +40,7 @@ func minReachableTTL(addr string, ipv6 bool, maxTTL, attempts int, dialTimeout t
 				sockErr = unix.SetsockoptInt(int(fd), level, opt, mid)
 			})
 			if err != nil {
-				return fmt.Errorf("control: %w", err)
+				return wrap("control", err)
 			}
 			return sockErr
 		}
@@ -76,7 +76,7 @@ func sendFakeData(
 ) error {
 	pipeFds := make([]int, 2)
 	if err := unix.Pipe(pipeFds); err != nil {
-		return fmt.Errorf("pipe creation: %w", err)
+		return wrap("pipe creation", err)
 	}
 	pipeR, pipeW := pipeFds[0], pipeFds[1]
 	defer unix.Close(pipeR)
@@ -89,24 +89,24 @@ func sendFakeData(
 		unix.PROT_READ|unix.PROT_WRITE,
 		unix.MAP_PRIVATE|unix.MAP_ANONYMOUS)
 	if err != nil {
-		return fmt.Errorf("mmap: %w", err)
+		return wrap("mmap", err)
 	}
 	defer unix.Munmap(data)
 	copy(data, fakeData)
 
 	err = unix.SetsockoptInt(int(fd), level, opt, fakeTTL)
 	if err != nil {
-		return fmt.Errorf("set fake ttl: %w", err)
+		return wrap("set fake ttl", err)
 	}
 	iov := unix.Iovec{
 		Base: &data[0],
 		Len:  toUint(len(fakeData)),
 	}
 	if _, err := unix.Vmsplice(pipeW, []unix.Iovec{iov}, unix.SPLICE_F_GIFT); err != nil {
-		return fmt.Errorf("vmsplice: %w", err)
+		return wrap("vmsplice", err)
 	}
 	if _, err := unix.Splice(pipeR, nil, fd, nil, len(fakeData), 0); err != nil {
-		return fmt.Errorf("splice: %w", err)
+		return wrap("splice", err)
 	}
 	time.Sleep(fakeSleep)
 
@@ -114,7 +114,7 @@ func sendFakeData(
 
 	err = unix.SetsockoptInt(int(fd), level, opt, defaultTTL)
 	if err != nil {
-		return fmt.Errorf("set default ttl: %w", err)
+		return wrap("set default ttl", err)
 	}
 	return nil
 }
@@ -125,14 +125,14 @@ func desyncSend(
 ) error {
 	rawConn, err := getRawConn(conn)
 	if err != nil {
-		return fmt.Errorf("get rawConn: %w", err)
+		return wrap("get raw conn", err)
 	}
 	var fd int
 	err = rawConn.Control(func(fileDesc uintptr) {
 		fd = int(fileDesc)
 	})
 	if err != nil {
-		return fmt.Errorf("control: %w", err)
+		return wrap("control", err)
 	}
 
 	var level, opt, defaultTTL int
@@ -145,7 +145,7 @@ func desyncSend(
 	}
 	defaultTTL, err = unix.GetsockoptInt(fd, level, opt)
 	if err != nil {
-		return fmt.Errorf("get default ttl: %w", err)
+		return wrap("get default ttl", err)
 	}
 
 	if fakeSleep < minInterval {
@@ -172,7 +172,7 @@ func desyncSend(
 		fakeSleep,
 	)
 	if err != nil {
-		return fmt.Errorf("first sending: %w", err)
+		return wrap("first sending", err)
 	}
 	/*err = sendFakeData(
 		fd,
@@ -184,7 +184,7 @@ func desyncSend(
 		fakeSleep,
 	)*/
 	if _, err = conn.Write(firstPacket[cut:]); err != nil {
-		return fmt.Errorf("second sending: %w", err)
+		return wrap("second sending", err)
 	}
 	return nil
 }
@@ -192,20 +192,20 @@ func desyncSend(
 func sendOOB(conn net.Conn) error {
 	rawConn, err := getRawConn(conn)
 	if err != nil {
-		return fmt.Errorf("get raw conn: %w", err)
+		return wrap("get raw conn", err)
 	}
 
 	var fd uintptr
 	if ctrlErr := rawConn.Control(func(f uintptr) {
 		fd = f
 	}); ctrlErr != nil {
-		return fmt.Errorf("control: %w", ctrlErr)
+		return wrap("control", ctrlErr)
 	}
 	if fd == 0 {
-		return fmt.Errorf("invalid socket descriptor")
+		return errors.New("invalid socket descriptor")
 	}
 	if err = unix.Sendto(int(fd), []byte{'&'}, unix.MSG_OOB, nil); err != nil {
-		return fmt.Errorf("unix.Sendto (MSG_OOB): %w", err)
+		return wrap("unix.Sendto (MSG_OOB)", err)
 	}
 	return nil
 }
