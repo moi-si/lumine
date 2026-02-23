@@ -222,7 +222,7 @@ func handleSOCKS5(cliConn net.Conn, id uint32) {
 		return
 	}
 	dstPort := binary.BigEndian.Uint16(portBytes)
-	oldTarget := net.JoinHostPort(originHost, fmt.Sprintf("%d", dstPort))
+	oldTarget := net.JoinHostPort(originHost, strconv.FormatUint(uint64(dstPort), 10))
 	logger.Info("CONNECT", oldTarget)
 	logger.Info("Policy:", policy)
 	if policy.Mode == ModeBlock {

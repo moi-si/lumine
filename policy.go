@@ -84,7 +84,7 @@ func (b *BoolWithDefault) UnmarshalJSON(data []byte) error {
 	case "true":
 		*b = BoolTrue
 	default:
-		return errors.New("invalid bool: "+ s)
+		return errors.New("invalid bool: " + s)
 	}
 	return nil
 }

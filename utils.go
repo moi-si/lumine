@@ -556,7 +556,7 @@ func handleTunnel(
 			}
 		}
 	default:
-		logger.Info("Unknown packet type")
+		logger.Info("Unknown protocol")
 		if replyFirst {
 			dstConn, err = net.DialTimeout("tcp", target, p.ConnectTimeout)
 			if err != nil {
@@ -709,11 +709,11 @@ type WrappedError struct {
 	cause error
 }
 
-func (e WrappedError) Error() string {
+func (e *WrappedError) Error() string {
 	return e.msg + ": " + e.cause.Error()
 }
 
-func (e WrappedError) Unwarp() error {
+func (e *WrappedError) Unwarp() error {
 	return e.cause
 }
 
