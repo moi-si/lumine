@@ -79,7 +79,7 @@
             "host": "207.241.225.120"
         },
         "(gist.|)github.com": {
-            "host": "$github"
+            "host": "20.200.245.247"
         },
         "api.github.com": {
             "host": "20.207.73.85"
