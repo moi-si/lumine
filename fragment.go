@@ -28,12 +28,13 @@ func sendRecords(conn net.Conn, clientHello []byte,
 		splitAndAppend(clientHello[:cut], nil, leftSegments, &packets)
 		splitAndAppend(clientHello[cut:], nil, rightSegments, &packets)
 		for i, packet := range packets {
-			if _, err := conn.Write(packet); err != nil {
-				return wrap("write packet "+ strconv.Itoa(i+1), err)
-			}
 			if i == 0 && oob {
-				if err := sendOOB(conn); err != nil {
+				if err := sendWithOOB(conn, packet); err != nil {
 					return wrap("oob", err)
+				}
+			} else {
+				if _, err := conn.Write(packet); err != nil {
+					return wrap("write packet "+strconv.Itoa(i+1), err)
 				}
 			}
 			if interval > 0 {
@@ -59,12 +60,13 @@ func sendRecords(conn net.Conn, clientHello []byte,
 
 	if segments == -1 {
 		for i, chunk := range chunks {
-			if _, err := conn.Write(chunk); err != nil {
-				return wrap("write record "+ strconv.Itoa(i+1), err)
-			}
 			if i == 0 && oob {
-				if err := sendOOB(conn); err != nil {
+				if err := sendWithOOB(conn, chunk); err != nil {
 					return wrap("oob", err)
+				}
+			} else {
+				if _, err := conn.Write(chunk); err != nil {
+					return wrap("write record "+strconv.Itoa(i+1), err)
 				}
 			}
 			if interval > 0 {
@@ -91,12 +93,13 @@ func sendRecords(conn net.Conn, clientHello []byte,
 		if i == segments-1 {
 			end = len(merged)
 		}
-		if _, err := conn.Write(merged[start:end]); err != nil {
-			return wrap("write segment "+ strconv.Itoa(i+1), err)
-		}
 		if i == 0 && oob {
-			if err := sendOOB(conn); err != nil {
+			if err := sendWithOOB(conn, merged[start:end]); err != nil {
 				return wrap("oob", err)
+			}
+		} else {
+			if _, err := conn.Write(merged[start:end]); err != nil {
+				return wrap("write segment "+strconv.Itoa(i+1), err)
 			}
 		}
 		if interval > 0 {

@@ -314,10 +314,7 @@ func ipRedirect(logger *log.Logger, ip string) (string, *Policy, error) {
 }
 
 func getRawConn(conn net.Conn) (syscall.RawConn, error) {
-	tcpConn, ok := conn.(*net.TCPConn)
-	if !ok {
-		return nil, errors.New("not *net.TCPConn")
-	}
+	tcpConn := conn.(*net.TCPConn)
 	return tcpConn.SyscallConn()
 }
 

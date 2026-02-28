@@ -177,7 +177,7 @@ func sendFakeData(
 		return wrap("TransmitFile call failed on waiting for event", err)
 	}
 	if val != 0 {
-		return errors.New("TransmitFile call failed, val="+strconv.FormatUint(uint64(val), 10))
+		return errors.New("TransmitFile call failed, val=" + strconv.FormatUint(uint64(val), 10))
 	}
 	return nil
 }
@@ -254,7 +254,7 @@ func desyncSend(
 	return nil
 }
 
-func sendOOB(conn net.Conn) error {
+func sendWithOOB(conn net.Conn, b []byte) error {
 	rawConn, err := getRawConn(conn)
 	if err != nil {
 		return wrap("get raw conn", err)
@@ -271,22 +271,24 @@ func sendOOB(conn net.Conn) error {
 		return errors.New("invalid socket handle")
 	}
 
+	data := make([]byte, len(b)+1)
+	copy(data, b)
+	data[len(b)] = '&'
 	var (
 		wsabuf    windows.WSABuf
-		data      byte = '&'
 		bytesSent uint32
 	)
-	wsabuf.Len = 1
-	wsabuf.Buf = &data
+	wsabuf.Len = uint32(len(data))
+	wsabuf.Buf = &data[0]
 
 	err = windows.WSASend(
 		sock,
 		&wsabuf,
-		1,               // dwBufferCount
-		&bytesSent,      // lpNumberOfBytesSent
-		windows.MSG_OOB, // dwFlags (MSG_OOB)
-		nil,             // lpOverlapped
-		nil,             // lpCompletionRoutine
+		1,
+		&bytesSent,
+		windows.MSG_OOB,
+		nil,
+		nil,
 	)
 	if err != nil {
 		return wrap("WSASend", err)
