@@ -304,7 +304,6 @@ func forwardHTTPRequest(logger *log.Logger, w http.ResponseWriter, originReq *ht
 	}
 
 	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.Proxy = nil
 
 	if p.ConnectTimeout > 0 {
 		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
