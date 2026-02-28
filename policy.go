@@ -4,9 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"time"
+
+	log "github.com/moi-si/mylog"
 )
 
 const unsetInt = -1
@@ -393,4 +396,86 @@ func mergePolicies(policies ...*Policy) Policy {
 		merged.DNSMode = DNSModeDefault
 	}
 	return merged
+}
+
+func genPolicy(logger *log.Logger, originHost string) (dstHost string, p Policy, fail bool, block bool) {
+	var err error
+
+	if net.ParseIP(originHost) != nil {
+		var ipPolicy *Policy
+		dstHost, ipPolicy, err = ipRedirect(logger, originHost)
+		if err != nil {
+			logger.Error("IP redirect:", err)
+			return "", Policy{}, true, false
+		}
+		if ipPolicy == nil {
+			p = defaultPolicy
+		} else {
+			p = mergePolicies(ipPolicy, &defaultPolicy)
+		}
+		if p.Mode == ModeBlock {
+			return "", Policy{}, false, true
+		}
+		return
+	}
+	domainPolicy, found := domainMatcher.Find(originHost)
+	if found {
+		if domainPolicy.Mode == ModeBlock {
+			return "", Policy{}, false, true
+		}
+		p = mergePolicies(domainPolicy, &defaultPolicy)
+	} else {
+		p = defaultPolicy
+	}
+	var cached bool
+	disableRedirect := p.Host != nil && strings.HasPrefix(*p.Host, "^")
+	if p.Host == nil || *p.Host == "" || *p.Host == "^" {
+		dstHost, cached, err = dnsResolve(originHost, p.DNSMode)
+		if err != nil {
+			logger.Error("Resolve", originHost+":", err)
+			return "", Policy{}, true, false
+		}
+		if cached {
+			logger.Info("DNS(cached):", originHost, "->", dstHost)
+		} else {
+			logger.Info("DNS:", originHost, "->", dstHost)
+		}
+	} else if *p.Host == "self" {
+		dstHost = originHost
+		logger.Info("Host:", dstHost)
+	} else {
+		if disableRedirect {
+			dstHost = (*p.Host)[1:]
+		} else {
+			dstHost = *p.Host
+		}
+		if strings.HasPrefix(dstHost, tagPrefix) {
+			if dstHost, err = getFromIPPool(dstHost[1:]); err != nil {
+				logger.Error(err)
+				return "", Policy{}, true, false
+			}
+			logger.Info("Host:", *p.Host, "->", dstHost)
+		} else {
+			logger.Info("Host:", *p.Host)
+		}
+	}
+	if !disableRedirect {
+		var ipPolicy *Policy
+		dstHost, ipPolicy, err = ipRedirect(logger, dstHost)
+		if err != nil {
+			logger.Info("IP redirect:", err)
+			return "", Policy{}, true, false
+		}
+		if ipPolicy != nil {
+			if found {
+				p = mergePolicies(domainPolicy, ipPolicy, &defaultPolicy)
+			} else {
+				p = mergePolicies(ipPolicy, &defaultPolicy)
+			}
+			if p.Mode == ModeBlock {
+				return "", Policy{}, false, true
+			}
+		}
+	}
+	return
 }

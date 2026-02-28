@@ -58,7 +58,7 @@ func socks5Accept(addr *string, serverAddr string, done chan struct{}) {
 			if connID > 0xFFFFF {
 				connID = 0
 			}
-			go handleSOCKS5(conn, connID)
+			go socks5Handler(conn, connID)
 		}
 	}
 }
@@ -76,7 +76,7 @@ func sendReply(logger *log.Logger, conn net.Conn, rep byte) {
 	}
 }
 
-func handleSOCKS5(cliConn net.Conn, id uint32) {
+func socks5Handler(cliConn net.Conn, id uint32) {
 	logger := log.New(os.Stdout, fmt.Sprintf("[S%05x]", id), log.LstdFlags, logLevel)
 	logger.Info("Connection from", cliConn.RemoteAddr().String())
 
@@ -94,7 +94,7 @@ func handleSOCKS5(cliConn net.Conn, id uint32) {
 					logger.Debug("Close dest conn:", err)
 				}
 			}
-			logger.Debug("Connection closed")
+			logger.Debug("Tunnel closed")
 		})
 	}
 	defer closeBoth()

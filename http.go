@@ -41,7 +41,7 @@ func httpAccept(addr *string, serverAddr string) {
 
 	srv := &http.Server{
 		Addr:              listenAddr,
-		Handler:           http.HandlerFunc(handleHTTP),
+		Handler:           http.HandlerFunc(httpHandler),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	if listenAddr[0] == ':' {
@@ -56,7 +56,7 @@ func httpAccept(addr *string, serverAddr string) {
 	}
 }
 
-func handleHTTP(w http.ResponseWriter, req *http.Request) {
+func httpHandler(w http.ResponseWriter, req *http.Request) {
 	connID := atomic.AddUint32(&httpConnID, 1)
 	if connID > 0xFFFFF {
 		atomic.StoreUint32(&httpConnID, 0)

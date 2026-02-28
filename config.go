@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/elastic/go-freelru"
 	"github.com/miekg/dns"
 	"github.com/moi-si/addrtrie"
@@ -410,4 +411,8 @@ func genDialContext() (func(ctx context.Context, network, address string) (net.C
 		}
 		return nil, err
 	}, nil
+}
+
+func hashStringXXHASH(s string) uint32 {
+	return uint32(xxhash.Sum64String(s))
 }

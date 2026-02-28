@@ -1,21 +1,25 @@
 package main
 
 import (
-	"bufio"
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"io"
 	"net"
-	"net/http"
 	"net/netip"
-	"strconv"
 	"strings"
 	"syscall"
 
-	"github.com/cespare/xxhash/v2"
 	log "github.com/moi-si/mylog"
 )
+
+func findLastDot(data []byte, sniPos, sniLen int) (offset int, found bool) {
+	for i := sniPos + sniLen; i >= sniPos; i-- {
+		if data[i] == '.' {
+			return i, true
+		}
+	}
+	return sniLen/2 + sniPos, false
+}
 
 func parseClientHello(data []byte) (prtVer []byte, sniPos int, sniLen int, hasKeyShare bool, err error) {
 	const (
@@ -217,6 +221,10 @@ func splitByPipe(s string) []string {
 	return result
 }
 
+func isIPv6(ip string) bool {
+	return strings.Contains(ip, ":")
+}
+
 func transformIP(ipStr string, targetNetStr string) (string, error) {
 	ip, err := netip.ParseAddr(ipStr)
 	if err != nil {
@@ -305,361 +313,6 @@ func ipRedirect(logger *log.Logger, ip string) (string, *Policy, error) {
 	return mapTo, policy, nil
 }
 
-func handleTunnel(
-	p Policy, replyFirst bool, dstConn, cliConn net.Conn, logger *log.Logger,
-	target, originHost string, closeBoth func()) {
-	var err error
-
-	if p.Mode == ModeRaw {
-		if replyFirst {
-			dstConn, err = net.DialTimeout("tcp", target, p.ConnectTimeout)
-			if err != nil {
-				logger.Error("Connection failed:", err)
-				return
-			}
-		}
-		go func() {
-			if _, err := io.Copy(dstConn, cliConn); err != nil && !isUseOfClosedConn(err) {
-				logger.Error("Copy", originHost, "->", cliConn.RemoteAddr().String()+":", err)
-			}
-			closeBoth()
-		}()
-		if _, err := io.Copy(cliConn, dstConn); err != nil && !isUseOfClosedConn(err) {
-			logger.Error("Copy", cliConn.RemoteAddr().String(), "->", originHost+":", err)
-		}
-		closeBoth()
-		return
-	}
-
-	br := bufio.NewReader(cliConn)
-	peekBytes, err := br.Peek(5)
-	if err != nil {
-		if len(peekBytes) == 0 && errors.Is(err, io.EOF) {
-			logger.Error("Empty tunnel")
-		} else {
-			logger.Error("Read first packet:", err)
-		}
-		return
-	}
-	switch peekBytes[0] {
-	case 'G', 'P', 'D', 'O', 'T', 'H':
-		req, err := http.ReadRequest(br)
-		if err != nil {
-			logger.Error("Parse HTTP request:", err)
-			return
-		}
-		defer req.Body.Close()
-
-		host := req.Host
-		if host == "" {
-			host = req.URL.Host
-			if host == "" {
-				logger.Error("Cannot determine target host")
-				return
-			}
-		}
-		logger.Info(req.Method, req.URL, "to", host)
-
-		var p Policy
-		if domainPolicy, exists := domainMatcher.Find(host); exists {
-			p = mergePolicies(domainPolicy, &defaultPolicy)
-		} else {
-			p = defaultPolicy
-		}
-		if p.Host != nil && *p.Host != "" {
-			if (*p.Host)[0] != '^' {
-				_, ipPolicy, err := ipRedirect(logger, *p.Host)
-				if err != nil {
-					logger.Error("IP redirect:", err)
-					return
-				}
-				if ipPolicy != nil {
-					p = mergePolicies(&p, ipPolicy, &defaultPolicy)
-				}
-			}
-		}
-		if p.HttpStatus == 0 || p.HttpStatus == -1 {
-			if replyFirst {
-				dstConn, err = net.DialTimeout("tcp", target, p.ConnectTimeout)
-				if err != nil {
-					logger.Error("Connection failed:", err)
-					resp := &http.Response{
-						Status:        "502 Bad Gateway",
-						StatusCode:    502,
-						Proto:         req.Proto,
-						ProtoMajor:    1,
-						ProtoMinor:    1,
-						Header:        make(http.Header),
-						ContentLength: 0,
-						Close:         true,
-					}
-					if err = resp.Write(cliConn); err != nil {
-						logger.Debug("Send 502:", err)
-					}
-					return
-				}
-			}
-			if err := req.Write(dstConn); err != nil {
-				logger.Error("Forward request:", err)
-				return
-			}
-		} else {
-			statusLine := strconv.Itoa(p.HttpStatus) + " " + http.StatusText(p.HttpStatus)
-			resp := &http.Response{
-				Status:        statusLine,
-				StatusCode:    p.HttpStatus,
-				Proto:         req.Proto,
-				ProtoMajor:    1,
-				ProtoMinor:    1,
-				Header:        make(http.Header),
-				ContentLength: 0,
-				Close:         true,
-			}
-			if p.HttpStatus == 301 || p.HttpStatus == 302 {
-				resp.Header.Set("Location", "https://"+host+req.URL.RequestURI())
-			}
-			if err = resp.Write(cliConn); err != nil {
-				logger.Error("Send", p.HttpStatus, "fail:", err)
-			} else {
-				logger.Info("Sent", statusLine)
-			}
-			return
-		}
-	case 0x16:
-		payloadLen := binary.BigEndian.Uint16(peekBytes[3:5])
-		record := make([]byte, 5+payloadLen)
-		if _, err = io.ReadFull(br, record); err != nil {
-			logger.Error("Read first record:", err)
-			return
-		}
-		prtVer, sniPos, sniLen, hasKeyShare, err := parseClientHello(record)
-		if err != nil {
-			logger.Error("Parse record:", err)
-			return
-		}
-		if p.Mode == ModeTLSAlert {
-			// fatal access_denied
-			if err = sendTLSAlert(cliConn, prtVer, 49, 2); err != nil {
-				logger.Debug("Send TLS alert:", err)
-			}
-			return
-		}
-		if p.TLS13Only == BoolTrue && !hasKeyShare {
-			logger.Info("Not a TLS 1.3 ClientHello, connection blocked")
-			// fatal protocol_version
-			if err = sendTLSAlert(cliConn, prtVer, 70, 2); err != nil {
-				logger.Debug("Send TLS alert:", err)
-			}
-			return
-		}
-		if sniPos <= 0 || sniLen <= 0 {
-			logger.Info("SNI not found")
-			if replyFirst {
-				dstConn, err = net.DialTimeout("tcp", target, p.ConnectTimeout)
-				if err != nil {
-					logger.Error("Connection failed:", err)
-					return
-				}
-			}
-			if _, err = dstConn.Write(record); err != nil {
-				logger.Error("ClientHello sending directly:", err)
-				return
-			}
-			logger.Info("ClientHello sent directly")
-		} else {
-			sniStr := string(record[sniPos : sniPos+sniLen])
-			if originHost != sniStr {
-				logger.Info("Server name:", sniStr)
-				var sniPolicy Policy
-				if domainPolicy, exists := domainMatcher.Find(sniStr); exists {
-					sniPolicy = mergePolicies(domainPolicy, &defaultPolicy)
-				} else {
-					sniPolicy = defaultPolicy
-				}
-				switch sniPolicy.Mode {
-				case ModeBlock:
-					logger.Info("Connection blocked")
-					return
-				case ModeTLSAlert:
-					if err = sendTLSAlert(cliConn, prtVer, 49, 2); err != nil {
-						logger.Error("Send TLS alert:", err)
-					}
-					logger.Info("Connection blocked by sending TLS alert")
-					return
-				}
-			}
-
-			if replyFirst {
-				dstConn, err = net.DialTimeout("tcp", target, p.ConnectTimeout)
-				if err != nil {
-					logger.Error("Connection failed:", err)
-					return
-				}
-			}
-			switch p.Mode {
-			case ModeDirect:
-				if _, err = dstConn.Write(record); err != nil {
-					logger.Error("ClientHello sending directly:", err)
-					return
-				}
-				logger.Info("ClientHello sent directly")
-			case ModeTLSRF:
-				err = sendRecords(dstConn, record, sniPos, sniLen,
-					p.NumRecords, p.NumSegments,
-					p.OOB == BoolTrue, p.ModMinorVer == BoolTrue,
-					p.SendInterval)
-				if err != nil {
-					logger.Error("TLSRF fail:", err)
-					return
-				}
-				logger.Info("ClientHello sent")
-			case ModeTTLD:
-				var ttl int
-				ipv6 := target[0] == '['
-				if p.FakeTTL == 0 || p.FakeTTL == -1 {
-					var cached bool
-					ttl, cached, err = minReachableTTL(target, ipv6, p.MaxTTL, p.Attempts, p.SingleTimeout)
-					if err != nil {
-						logger.Error("Probe TTL:", err)
-						return
-					}
-					if ttl == -1 {
-						logger.Error("Reachable TTL not found")
-						return
-					}
-					if calcTTL != nil {
-						ttl, err = calcTTL(ttl)
-						if err != nil {
-							logger.Error("Calculate TTL:", err)
-							return
-						}
-					} else {
-						ttl -= 1
-					}
-					if cached {
-						logger.Info("Fake TTL(cache): ", strconv.Itoa(ttl))
-					} else {
-						logger.Info("Fake TTL:", ttl)
-					}
-				} else {
-					ttl = p.FakeTTL
-				}
-				err = desyncSend(
-					dstConn, ipv6, record,
-					sniPos, sniLen, ttl, p.FakeSleep,
-				)
-				if err != nil {
-					logger.Error("TTLD fail:", err)
-					return
-				}
-				logger.Info("ClientHello sent")
-			}
-		}
-	default:
-		logger.Info("Unknown protocol")
-		if replyFirst {
-			dstConn, err = net.DialTimeout("tcp", target, p.ConnectTimeout)
-			if err != nil {
-				logger.Error("Connection failed:", err)
-				return
-			}
-		}
-	}
-
-	go func() {
-		if _, err := io.Copy(dstConn, cliConn); err != nil && !isUseOfClosedConn(err) {
-			logger.Error("Copy", originHost, "->", cliConn.RemoteAddr().String()+":", err)
-		}
-		closeBoth()
-	}()
-	if _, err := io.Copy(cliConn, dstConn); err != nil && !isUseOfClosedConn(err) {
-		logger.Error("Copy", cliConn.RemoteAddr().String(), "->", originHost+":", err)
-	}
-	closeBoth()
-}
-
-func genPolicy(logger *log.Logger, originHost string) (dstHost string, p Policy, fail bool, block bool) {
-	var err error
-
-	if net.ParseIP(originHost) != nil {
-		var ipPolicy *Policy
-		dstHost, ipPolicy, err = ipRedirect(logger, originHost)
-		if err != nil {
-			logger.Error("IP redirect:", err)
-			return "", Policy{}, true, false
-		}
-		if ipPolicy == nil {
-			p = defaultPolicy
-		} else {
-			p = mergePolicies(ipPolicy, &defaultPolicy)
-		}
-		if p.Mode == ModeBlock {
-			return "", Policy{}, false, true
-		}
-		return
-	}
-	domainPolicy, found := domainMatcher.Find(originHost)
-	if found {
-		if domainPolicy.Mode == ModeBlock {
-			return "", Policy{}, false, true
-		}
-		p = mergePolicies(domainPolicy, &defaultPolicy)
-	} else {
-		p = defaultPolicy
-	}
-	var cached bool
-	disableRedirect := p.Host != nil && strings.HasPrefix(*p.Host, "^")
-	if p.Host == nil || *p.Host == "" || *p.Host == "^" {
-		dstHost, cached, err = dnsResolve(originHost, p.DNSMode)
-		if err != nil {
-			logger.Error("Resolve", originHost+":", err)
-			return "", Policy{}, true, false
-		}
-		if cached {
-			logger.Info("DNS(cached):", originHost, "->", dstHost)
-		} else {
-			logger.Info("DNS:", originHost, "->", dstHost)
-		}
-	} else if *p.Host == "self" {
-		dstHost = originHost
-		logger.Info("Host:", dstHost)
-	} else {
-		if disableRedirect {
-			dstHost = (*p.Host)[1:]
-		} else {
-			dstHost = *p.Host
-		}
-		if strings.HasPrefix(dstHost, tagPrefix) {
-			if dstHost, err = getFromIPPool(dstHost[1:]); err != nil {
-				logger.Error(err)
-				return "", Policy{}, true, false
-			}
-			logger.Info("Host:", *p.Host, "->", dstHost)
-		} else {
-			logger.Info("Host:", *p.Host)
-		}
-	}
-	if !disableRedirect {
-		var ipPolicy *Policy
-		dstHost, ipPolicy, err = ipRedirect(logger, dstHost)
-		if err != nil {
-			logger.Info("IP redirect:", err)
-			return "", Policy{}, true, false
-		}
-		if ipPolicy != nil {
-			if found {
-				p = mergePolicies(domainPolicy, ipPolicy, &defaultPolicy)
-			} else {
-				p = mergePolicies(ipPolicy, &defaultPolicy)
-			}
-			if p.Mode == ModeBlock {
-				return "", Policy{}, false, true
-			}
-		}
-	}
-	return
-}
-
 func getRawConn(conn net.Conn) (syscall.RawConn, error) {
 	tcpConn, ok := conn.(*net.TCPConn)
 	if !ok {
@@ -668,40 +321,8 @@ func getRawConn(conn net.Conn) (syscall.RawConn, error) {
 	return tcpConn.SyscallConn()
 }
 
-func findLastDot(data []byte, sniPos, sniLen int) (offset int, found bool) {
-	for i := sniPos + sniLen; i >= sniPos; i-- {
-		if data[i] == '.' {
-			return i, true
-		}
-	}
-	return sniLen/2 + sniPos, false
-}
-
 func isUseOfClosedConn(err error) bool {
 	return strings.Contains(err.Error(), "use of closed")
-}
-
-func hashStringXXHASH(s string) uint32 {
-	return uint32(xxhash.Sum64String(s))
-}
-
-func isIPv6(ip string) bool {
-	return strings.Contains(ip, ":")
-}
-
-func getFromIPPool(tag string) (ipStr string, err error) {
-	if len(ipPools) == 0 {
-		return "", errors.New("no ip pools")
-	}
-	ipPool, exists := ipPools[tag]
-	if !exists {
-		return "", errors.New("ip pool " + tag + " is not exists")
-	}
-	ip := ipPool.Get()
-	if ip == "" {
-		return "", errors.New("cannot get ip from " + tag)
-	}
-	return ip, nil
 }
 
 type WrappedError struct {

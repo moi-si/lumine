@@ -374,3 +374,18 @@ func (p *IPPool) Close() {
 /*func (p *IPPool) Reset() {
 	p.scan()
 }*/
+
+func getFromIPPool(tag string) (ipStr string, err error) {
+	if len(ipPools) == 0 {
+		return "", errors.New("no ip pools")
+	}
+	ipPool, exists := ipPools[tag]
+	if !exists {
+		return "", errors.New("ip pool " + tag + " is not exists")
+	}
+	ip := ipPool.Get()
+	if ip == "" {
+		return "", errors.New("cannot get ip from " + tag)
+	}
+	return ip, nil
+}
