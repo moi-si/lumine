@@ -1,6 +1,6 @@
 //go:build (arm || 386) && linux
 
-package main
+package lumine
 
 func toUint(n int) uint32 {
 	return uint32(n)

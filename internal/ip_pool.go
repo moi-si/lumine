@@ -1,4 +1,4 @@
-package main
+package lumine
 
 import (
 	"context"
@@ -376,10 +376,10 @@ func (p *IPPool) Close() {
 }*/
 
 func getFromIPPool(tag string) (ipStr string, err error) {
-	if len(ipPools) == 0 {
+	if len(IPPools) == 0 {
 		return "", errors.New("no ip pools")
 	}
-	ipPool, exists := ipPools[tag]
+	ipPool, exists := IPPools[tag]
 	if !exists {
 		return "", errors.New("ip pool " + tag + " is not exists")
 	}

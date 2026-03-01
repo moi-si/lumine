@@ -1,4 +1,4 @@
-package main
+package lumine
 
 import (
 	"context"
@@ -24,7 +24,7 @@ const (
 
 var httpConnID uint32
 
-func httpAccept(addr *string, serverAddr string) {
+func HTTPAccept(addr *string, serverAddr string) {
 	var listenAddr string
 	if *addr == "" {
 		listenAddr = serverAddr

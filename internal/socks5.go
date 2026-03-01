@@ -1,4 +1,4 @@
-package main
+package lumine
 
 import (
 	"encoding/binary"
@@ -21,7 +21,7 @@ const (
 	socks5RepAtypNotSupported byte = 0x08
 )
 
-func socks5Accept(addr *string, serverAddr string, done chan struct{}) {
+func SOCKS5Accept(addr *string, serverAddr string, done chan struct{}) {
 	defer func() { done <- struct{}{} }()
 	var listenAddr string
 	if *addr == "" {

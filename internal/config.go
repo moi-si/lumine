@@ -1,4 +1,4 @@
-package main
+package lumine
 
 import (
 	"context"
@@ -44,7 +44,7 @@ type Config struct {
 var (
 	logLevel      = log.INFO
 	defaultPolicy Policy
-	ipPools       map[string]*IPPool
+	IPPools       map[string]*IPPool
 	sem           chan struct{}
 	dnsAddr       string
 	calcTTL       func(int) (int, error)
@@ -151,7 +151,7 @@ func loadFakeTTLRules(conf string) error {
 	return nil
 }
 
-func loadConfig(filePath string) (string, string, error) {
+func LoadConfig(filePath string) (string, string, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return "", "", err
@@ -179,8 +179,8 @@ func loadConfig(filePath string) (string, string, error) {
 
 	defaultPolicy = conf.DefaultPolicy
 	if len(conf.IPPools) != 0 {
-		ipPools = conf.IPPools
-		for tag, pool := range ipPools {
+		IPPools = conf.IPPools
+		for tag, pool := range IPPools {
 			logger := log.New(os.Stdout, "<"+tag+">", log.LstdFlags, logLevel)
 			logger.Info("Testing...")
 			if err := pool.Init(logger); err != nil {
