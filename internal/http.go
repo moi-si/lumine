@@ -32,7 +32,7 @@ func HTTPAccept(addr *string, serverAddr string) {
 		listenAddr = *addr
 	}
 	if listenAddr == "" {
-		fmt.Println("HTTP bind address not specified")
+		fmt.Println("HTTP bind address is not specified")
 		return
 	}
 	if listenAddr == "none" {
@@ -48,10 +48,10 @@ func HTTPAccept(addr *string, serverAddr string) {
 		listenAddr = "0.0.0.0" + listenAddr
 	}
 	logger := log.New(os.Stdout, "[H00000]", log.LstdFlags, logLevel)
-	logger.Info("Listening on", "http://"+listenAddr)
+	logger.Info("HTTP proxy server started at", listenAddr)
 
 	if err := srv.ListenAndServe(); err != nil {
-		logger.Error("ListenAndServe:", err)
+		logger.Error(err)
 		return
 	}
 }
@@ -89,7 +89,7 @@ func handleConnect(logger *log.Logger, w http.ResponseWriter, req *http.Request)
 
 	originHost, dstPort, err := net.SplitHostPort(oldDest)
 	if err != nil {
-		logger.Error("SplitHostPort:", err)
+		logger.Error("Split", oldDest+":", err)
 		return
 	}
 
@@ -125,7 +125,7 @@ func handleConnect(logger *log.Logger, w http.ResponseWriter, req *http.Request)
 	}
 	cliConn, _, err := hijacker.Hijack()
 	if err != nil {
-		logger.Error("Hijack fail:", err)
+		logger.Error("Hijack:", err)
 		http.Error(w, status500, http.StatusInternalServerError)
 		return
 	}
@@ -144,7 +144,7 @@ func handleConnect(logger *log.Logger, w http.ResponseWriter, req *http.Request)
 					logger.Debug("Close dest conn:", err)
 				}
 			}
-			logger.Debug("Connection closed")
+			logger.Debug("Tunnel closed")
 		})
 	}
 	defer closeBoth()
@@ -153,7 +153,7 @@ func handleConnect(logger *log.Logger, w http.ResponseWriter, req *http.Request)
 	if replyFirst {
 		_, err = cliConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
 		if err != nil {
-			logger.Error("Write 200:", err)
+			logger.Error("Send 200:", err)
 			return
 		}
 	} else {
@@ -162,13 +162,13 @@ func handleConnect(logger *log.Logger, w http.ResponseWriter, req *http.Request)
 			logger.Error("Connection failed:", err)
 			_, err = cliConn.Write([]byte("HTTP/1.1 502 Bad Gateway\r\n\r\n"))
 			if err != nil {
-				logger.Error("Write 502:", err)
+				logger.Error("Send 502:", err)
 			}
 			return
 		}
 		_, err = cliConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
 		if err != nil {
-			logger.Error("Write 200:", err)
+			logger.Error("Send 200:", err)
 			return
 		}
 	}
@@ -181,11 +181,11 @@ func forwardHTTPRequest(logger *log.Logger, w http.ResponseWriter, originReq *ht
 	host := originReq.Host
 	if host == "" {
 		host = originReq.URL.Host
-	}
-	if host == "" {
-		logger.Error("Cannot determine target host")
-		http.Error(w, "400 Bad Request", http.StatusBadRequest)
-		return
+		if host == "" {
+			logger.Error("Cannot determine target host")
+			http.Error(w, "400 Bad Request", http.StatusBadRequest)
+			return
+		}
 	}
 
 	originHost, port, err := net.SplitHostPort(host)
@@ -198,7 +198,7 @@ func forwardHTTPRequest(logger *log.Logger, w http.ResponseWriter, originReq *ht
 		}
 	}
 
-	logger.Info(originReq.Method, originReq.URL, "to", host)
+	logger.Info("method="+originReq.Method, "url="+originReq.URL.String(), "host="+host)
 
 	var p Policy
 	if domainPolicy, exists := domainMatcher.Find(originHost); exists {

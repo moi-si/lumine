@@ -341,3 +341,7 @@ func wrap(msg string, cause error) error {
 		cause: cause,
 	}
 }
+
+func byteToStirng(b byte) string {
+	return fmt.Sprintf("%x", b)
+}

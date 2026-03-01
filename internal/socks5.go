@@ -30,23 +30,23 @@ func SOCKS5Accept(addr *string, serverAddr string, done chan struct{}) {
 		listenAddr = *addr
 	}
 	if listenAddr == "" {
-		fmt.Println("SOCKS5 bind address not specified")
+		fmt.Println("SOCKS5 bind address is not specified")
 		return
 	}
 	if listenAddr == "none" {
 		return
 	}
 
+	logger := log.New(os.Stdout, "[S00000]", log.LstdFlags, logLevel)
 	ln, err := net.Listen("tcp", listenAddr)
 	if err != nil {
-		fmt.Println("SOCKS5 Listen error:", err)
+		logger.Error(err)
 		return
 	}
 	if listenAddr[0] == ':' {
 		listenAddr = "0.0.0.0" + listenAddr
 	}
-	logger := log.New(os.Stdout, "[S00000]", log.LstdFlags, logLevel)
-	logger.Info("Listening on", "socks5://"+listenAddr)
+	logger.Info("SOCKS5 server started at", listenAddr)
 
 	var connID uint32
 	for {
@@ -105,7 +105,7 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 		return
 	}
 	if header[0] != 0x05 {
-		logger.Error("Not SOCKS5:", header[0])
+		logger.Error("Excepted socks version 5, but found", byteToStirng(header[0]))
 		return
 	}
 	nMethods := int(header[1])
@@ -119,25 +119,25 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 		authMethod = 0x00
 	}
 	if _, err = cliConn.Write([]byte{0x05, authMethod}); err != nil {
-		logger.Error("Method write:", err)
+		logger.Error("Send auth method:", err)
 		return
 	}
 	if authMethod == 0xFF {
-		logger.Error("No `no auth` method")
+		logger.Error("`no auth` method not found")
 		return
 	}
 
 	header, err = readN(cliConn, 4)
 	if err != nil {
-		logger.Error("Read req header:", err)
+		logger.Error("Read request header:", err)
 		return
 	}
 	if header[0] != 0x05 {
-		logger.Error("Invalid version:", header[0])
+		logger.Error("Expected socks version 5, but found", byteToStirng(header[0]))
 		return
 	}
 	if header[1] != 0x01 {
-		logger.Error("Not CONNECT:", header[1])
+		logger.Error("Expected cmd CONNECT, but found", byteToStirng(header[1]))
 		sendReply(logger, cliConn, socks5RepCmdNotSupported)
 		return
 	}
@@ -150,7 +150,7 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 	case 0x01: // IPv4 address
 		ipBytes, err := readN(cliConn, 4)
 		if err != nil {
-			logger.Error("Read IPv4:", err)
+			logger.Error("Read ipv4 address:", err)
 			return
 		}
 		originHost = net.IP(ipBytes).String()
@@ -169,7 +169,7 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 	case 0x04: // IPv6 address
 		ipBytes, err := readN(cliConn, 16)
 		if err != nil {
-			logger.Error("Read IPv6:", err)
+			logger.Error("Read ipv6 address:", err)
 			return
 		}
 		originHost = net.IP(ipBytes).String()
@@ -193,7 +193,7 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 		}
 		domainBytes, err := readN(cliConn, int(lenByte[0]))
 		if err != nil {
-			logger.Error("Read domain:", err)
+			logger.Error("Read domain address:", err)
 		}
 		originHost = string(domainBytes)
 		var fail, block bool
@@ -203,7 +203,7 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 			return
 		}
 		if block {
-			logger.Error("Blocked connection to", originHost)
+			logger.Error("Connection blocked:", originHost)
 			if policy.ReplyFirst == BoolTrue {
 				sendReply(logger, cliConn, socks5RepSuccess)
 			} else {
@@ -212,7 +212,7 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 			return
 		}
 	default:
-		logger.Error("Invalid address type:", header[3])
+		logger.Error("Invalid address type:", byteToStirng(header[3]))
 		sendReply(logger, cliConn, socks5RepAtypNotSupported)
 		return
 	}

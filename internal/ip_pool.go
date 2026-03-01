@@ -271,9 +271,9 @@ func (p *IPPool) testIP(index int) (time.Duration, float64) {
 	if successCount == 0 {
 		return time.Duration(math.MaxInt64), lossRate
 	}
-	rtt := totalLatency / time.Duration(successCount)
-	p.logger.Debug(fmt.Sprintf("ip=%s, rtt=%s, loss=%.2f%%", p.ips[index], rtt.String(), lossRate*100))
-	return rtt, lossRate
+	latency := totalLatency / time.Duration(successCount)
+	p.logger.Debug("ip="+p.ips[index], "latency="+latency.String(), "loss="+fmt.Sprintf("%.2f%%", lossRate*100))
+	return latency, lossRate
 }
 
 func (p *IPPool) updateBest(results []ipResult) {

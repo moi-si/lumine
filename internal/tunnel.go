@@ -73,9 +73,9 @@ func handleTunnel(
 	go func() {
 		if _, err := io.Copy(dstConnTCP, srcConnTCP); err == nil {
 			if err = srcConnTCP.CloseRead(); err == nil {
-				logger.Debug("src: closed read")
+				logger.Debug("Closed client read")
 			} else {
-				logger.Debug("src: close read: ", err)
+				logger.Debug("Close client read: ", err)
 			}
 		} else if !isUseOfClosedConn(err) {
 			logger.Error("Forward", originHost, "->", cliConn.RemoteAddr().String()+":", err)
@@ -85,9 +85,9 @@ func handleTunnel(
 	}()
 	if _, err := io.Copy(srcConnTCP, dstConnTCP); err == nil {
 		if err = dstConnTCP.CloseRead(); err == nil {
-			logger.Debug("dest: closed read")
+			logger.Debug("Closed dest read")
 		} else {
-			logger.Debug("dest: close read: ", err)
+			logger.Debug("Close dest read:", err)
 		}
 		<-done
 	} else if !isUseOfClosedConn(err) {
@@ -113,7 +113,7 @@ func handleHTTP(logger *log.Logger, req *http.Request,
 			host = originHost
 		}
 	}
-	logger.Info(req.Method, req.URL, "to", host)
+	logger.Info("host="+host, "method="+req.Method, "url="+req.URL.String())
 
 	var p Policy
 	if domainPolicy, exists := domainMatcher.Find(host); exists {
@@ -149,13 +149,13 @@ func handleHTTP(logger *log.Logger, req *http.Request,
 					Close:         true,
 				}
 				if err = resp.Write(cliConn); err != nil {
-					logger.Debug("Send 502:", err)
+					logger.Debug("Failed to send 502:", err)
 				}
 				return
 			}
 		}
 		if err := req.Write(dstConn); err != nil {
-			logger.Error("Forward request:", err)
+			logger.Error("Forward HTTP request:", err)
 			return
 		}
 	} else {
@@ -174,7 +174,7 @@ func handleHTTP(logger *log.Logger, req *http.Request,
 			resp.Header.Set("Location", "https://"+host+req.URL.RequestURI())
 		}
 		if err = resp.Write(cliConn); err != nil {
-			logger.Error("Send", p.HttpStatus, "fail:", err)
+			logger.Error("Send", p.HttpStatus, err)
 		} else {
 			logger.Info("Sent", statusLine)
 		}
@@ -199,20 +199,20 @@ func handleTLS(logger *log.Logger, payloadLen uint16,
 	if p.Mode == ModeTLSAlert {
 		// fatal access_denied
 		if err = sendTLSAlert(cliConn, prtVer, 49, 2); err != nil {
-			logger.Debug("Send TLS alert:", err)
+			logger.Debug("Failed to send TLS alert:", err)
 		}
 		return
 	}
 	if p.TLS13Only == BoolTrue && !hasKeyShare {
-		logger.Info("Not a TLS 1.3 ClientHello, connection blocked")
+		logger.Info("Connection blocked: no key_share in ClientHello")
 		// fatal protocol_version
 		if err = sendTLSAlert(cliConn, prtVer, 70, 2); err != nil {
-			logger.Debug("Send TLS alert:", err)
+			logger.Debug("Failed to send tls alert:", err)
 		}
 		return
 	}
 	if sniPos <= 0 || sniLen <= 0 {
-		logger.Info("SNI not found")
+		logger.Info("No SNI in ClientHello")
 		if replyFirst {
 			dstConn, err = net.DialTimeout("tcp", target, p.ConnectTimeout)
 			if err != nil {
@@ -258,17 +258,17 @@ func handleTLS(logger *log.Logger, payloadLen uint16,
 		switch p.Mode {
 		case ModeDirect:
 			if _, err = dstConn.Write(record); err != nil {
-				logger.Error("ClientHello sending directly:", err)
+				logger.Error("Send clienthello:", err)
 				return
 			}
-			logger.Info("ClientHello sent directly")
+			logger.Info("clienthello sent directly")
 		case ModeTLSRF:
 			err = sendRecords(dstConn, record, sniPos, sniLen,
 				p.NumRecords, p.NumSegments,
 				p.OOB == BoolTrue, p.ModMinorVer == BoolTrue,
 				p.SendInterval)
 			if err != nil {
-				logger.Error("TLSRF fail:", err)
+				logger.Error("TLS fragment:", err)
 				return
 			}
 			logger.Info("ClientHello sent in fragments")
@@ -279,7 +279,7 @@ func handleTLS(logger *log.Logger, payloadLen uint16,
 				var cached bool
 				ttl, cached, err = minReachableTTL(target, ipv6, p.MaxTTL, p.Attempts, p.SingleTimeout)
 				if err != nil {
-					logger.Error("Probe TTL:", err)
+					logger.Error("Detect minimum reachable ttl:", err)
 					return
 				}
 				if ttl == -1 {
@@ -289,14 +289,14 @@ func handleTLS(logger *log.Logger, payloadLen uint16,
 				if calcTTL != nil {
 					ttl, err = calcTTL(ttl)
 					if err != nil {
-						logger.Error("Calculate TTL:", err)
+						logger.Error("Calculate fake TTL:", err)
 						return
 					}
 				} else {
 					ttl -= 1
 				}
 				if cached {
-					logger.Info("Fake TTL(cache): ", strconv.Itoa(ttl))
+					logger.Info("Fake TTL (cached):", strconv.Itoa(ttl))
 				} else {
 					logger.Info("Fake TTL:", ttl)
 				}
@@ -308,7 +308,7 @@ func handleTLS(logger *log.Logger, payloadLen uint16,
 				sniPos, sniLen, ttl, p.FakeSleep,
 			)
 			if err != nil {
-				logger.Error("TTLD fail:", err)
+				logger.Error("TTL desync:", err)
 				return
 			}
 			logger.Info("ClientHello sent with fake packet")
