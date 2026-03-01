@@ -75,7 +75,7 @@ func handleTunnel(
 			if err = srcConnTCP.CloseRead(); err == nil {
 				logger.Debug("Closed client read")
 			} else {
-				logger.Debug("Close client read: ", err)
+				logger.Debug("Close client read:", err)
 			}
 		} else if !isUseOfClosedConn(err) {
 			logger.Error("Forward", originHost, "->", cliConn.RemoteAddr().String()+":", err)
@@ -89,11 +89,11 @@ func handleTunnel(
 		} else {
 			logger.Debug("Close dest read:", err)
 		}
-		<-done
 	} else if !isUseOfClosedConn(err) {
 		logger.Error("Forward", cliConn.RemoteAddr().String(), "->", originHost+":", err)
 		closeBoth()
 	}
+	<-done
 }
 
 func handleHTTP(logger *log.Logger, req *http.Request,
