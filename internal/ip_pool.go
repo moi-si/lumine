@@ -226,10 +226,8 @@ func (p *IPPool) scan() {
 		}()
 	}
 
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
+	wg.Wait()
+	close(results)
 
 	validResults := make([]ipResult, 0, len(p.ips))
 	for res := range results {

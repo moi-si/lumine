@@ -181,7 +181,7 @@ func LoadConfig(filePath string) (string, string, error) {
 	if len(conf.IPPools) != 0 {
 		IPPools = conf.IPPools
 		for tag, pool := range IPPools {
-			logger := log.New(os.Stdout, "<"+tag+">", log.LstdFlags, logLevel)
+			logger := log.New(os.Stdout, "[P-"+tag+"]", log.LstdFlags, logLevel)
 			logger.Info("Testing...")
 			if err := pool.Init(logger); err != nil {
 				return "", "", wrap("init ip pool "+tag, err)
