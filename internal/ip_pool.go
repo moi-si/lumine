@@ -318,7 +318,7 @@ func (p *IPPool) updateBest(results []ipResult) {
 		builder.WriteString(p.ips[index])
 		builder.WriteByte(' ')
 	}
-	p.logger.Debug(builder.String())
+	p.logger.Info(builder.String())
 
 	p.curValidIPs = uint32(validCount)
 	p.totalWeight = totalWeight

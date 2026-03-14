@@ -29,7 +29,7 @@ func sendRecords(conn net.Conn, clientHello []byte,
 		splitAndAppend(clientHello[cut:], nil, rightSegments, &packets)
 		for i, packet := range packets {
 			if i == 0 && oob {
-				if err := sendWithOOB(conn, packet); err != nil {
+				if err := sendWithOOB(conn, packet, '*'); err != nil {
 					return wrap("oob", err)
 				}
 			} else {
@@ -61,7 +61,7 @@ func sendRecords(conn net.Conn, clientHello []byte,
 	if segments == -1 {
 		for i, chunk := range chunks {
 			if i == 0 && oob {
-				if err := sendWithOOB(conn, chunk); err != nil {
+				if err := sendWithOOB(conn, chunk, '*'); err != nil {
 					return wrap("oob", err)
 				}
 			} else {
@@ -94,7 +94,7 @@ func sendRecords(conn net.Conn, clientHello []byte,
 			end = len(merged)
 		}
 		if i == 0 && oob {
-			if err := sendWithOOB(conn, merged[start:end]); err != nil {
+			if err := sendWithOOB(conn, merged[start:end], '*'); err != nil {
 				return wrap("oob", err)
 			}
 		} else {
