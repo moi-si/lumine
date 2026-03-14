@@ -10,7 +10,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -131,23 +130,18 @@ func handleConnect(logger *log.Logger, w http.ResponseWriter, req *http.Request)
 	}
 
 	var (
-		once    sync.Once
-		dstConn net.Conn
+		closeHere = true
+		dstConn   net.Conn
 	)
-	closeBoth := func() {
-		once.Do(func() {
-			if err := cliConn.Close(); err != nil {
+	defer func() {
+		if closeHere {
+			if err := cliConn.Close(); err == nil {
+				logger.Debug("Closed client conn")
+			} else {
 				logger.Debug("Close client conn:", err)
 			}
-			if dstConn != nil {
-				if err := dstConn.Close(); err != nil {
-					logger.Debug("Close dest conn:", err)
-				}
-			}
-			logger.Debug("Tunnel closed")
-		})
-	}
-	defer closeBoth()
+		}
+	}()
 
 	replyFirst := policy.ReplyFirst == BoolTrue
 	if replyFirst {
@@ -173,8 +167,8 @@ func handleConnect(logger *log.Logger, w http.ResponseWriter, req *http.Request)
 		}
 	}
 
-	handleTunnel(policy, replyFirst, dstConn, cliConn,
-		logger, dest, originHost, closeBoth)
+	closeHere = false
+	handleTunnel(policy, replyFirst, dstConn, cliConn, logger, dest, originHost)
 }
 
 func forwardHTTPRequest(logger *log.Logger, w http.ResponseWriter, originReq *http.Request) {

@@ -322,26 +322,22 @@ func isUseOfClosedConn(err error) bool {
 	return strings.Contains(err.Error(), "use of closed")
 }
 
-type WrappedError struct {
+type wrappedError struct {
 	msg   string
 	cause error
 }
 
-func (e *WrappedError) Error() string {
+func (e *wrappedError) Error() string {
 	return e.msg + ": " + e.cause.Error()
 }
 
-func (e *WrappedError) Unwarp() error {
+func (e *wrappedError) Unwarp() error {
 	return e.cause
 }
 
 func wrap(msg string, cause error) error {
-	return &WrappedError{
+	return &wrappedError{
 		msg:   msg,
 		cause: cause,
 	}
-}
-
-func byteToStirng(b byte) string {
-	return fmt.Sprintf("%x", b)
 }

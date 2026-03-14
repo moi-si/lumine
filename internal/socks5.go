@@ -8,7 +8,6 @@ import (
 	"os"
 	"slices"
 	"strconv"
-	"sync"
 
 	log "github.com/moi-si/mylog"
 )
@@ -46,7 +45,7 @@ func SOCKS5Accept(addr *string, serverAddr string, done chan struct{}) {
 	if listenAddr[0] == ':' {
 		listenAddr = "0.0.0.0" + listenAddr
 	}
-	logger.Info("SOCKS5 server started at", listenAddr)
+	logger.Info("SOCKS5 proxy server started at", listenAddr)
 
 	var connID uint32
 	for {
@@ -81,23 +80,18 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 	logger.Info("Connection from", cliConn.RemoteAddr().String())
 
 	var (
-		once    sync.Once
-		dstConn net.Conn
+		closeHere = true
+		dstConn   net.Conn
 	)
-	closeBoth := func() {
-		once.Do(func() {
-			if err := cliConn.Close(); err != nil {
+	defer func() {
+		if closeHere {
+			if err := cliConn.Close(); err == nil {
+				logger.Debug("Closed client conn")
+			} else {
 				logger.Debug("Close client conn:", err)
 			}
-			if dstConn != nil {
-				if err := dstConn.Close(); err != nil {
-					logger.Debug("Close dest conn:", err)
-				}
-			}
-			logger.Debug("Tunnel closed")
-		})
-	}
-	defer closeBoth()
+		}
+	}()
 
 	header, err := readN(cliConn, 2)
 	if err != nil {
@@ -245,6 +239,6 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 	}
 	sendReply(logger, cliConn, socks5RepSuccess)
 
-	handleTunnel(policy, replyFirst, dstConn, cliConn,
-		logger, target, originHost, closeBoth)
+	closeHere = false
+	handleTunnel(policy, replyFirst, dstConn, cliConn, logger, target, originHost)
 }

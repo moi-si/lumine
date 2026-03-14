@@ -9,14 +9,31 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"sync"
 
 	log "github.com/moi-si/mylog"
 )
 
 func handleTunnel(
 	p Policy, replyFirst bool, dstConn, cliConn net.Conn, logger *log.Logger,
-	target, originHost string, closeBoth func()) {
+	target, originHost string) {
 	var err error
+	var once sync.Once
+	closeBoth := func() {
+		if err := cliConn.Close(); err == nil {
+			logger.Debug("Closed client conn")
+		} else {
+			logger.Debug("Close client conn:", err)
+		}
+		if dstConn != nil {
+			if err := dstConn.Close(); err == nil {
+				logger.Debug("Closed dest conn")
+			} else {
+				logger.Debug("Close dest conn:", err)
+			}
+		}
+	}
+	defer once.Do(closeBoth)
 
 	if p.Mode == ModeRaw {
 		if replyFirst {
@@ -40,7 +57,8 @@ func handleTunnel(
 
 		if peekBytes[0] == 0x16 && peekBytes[1] == 0x03 {
 			payloadLen := binary.BigEndian.Uint16(peekBytes[3:5])
-			if ok := handleTLS(logger, payloadLen, p, replyFirst, originHost, target,
+			var ok bool
+			if dstConn, ok = handleTLS(logger, payloadLen, p, replyFirst, originHost, target,
 				br, cliConn, dstConn); !ok {
 				return
 			}
@@ -54,51 +72,53 @@ func handleTunnel(
 			bytes.HasPrefix(peekBytes, []byte("PATCH ")) {
 			req, err := http.ReadRequest(br)
 			if err == nil {
-				if ok := handleHTTP(logger, req,
+				var ok bool
+				if dstConn, ok = handleHTTP(logger, req,
 					replyFirst, originHost, target,
 					cliConn, dstConn); !ok {
 					return
 				}
 			} else {
-				logger.Error("Trying parsing HTTP: ", err)
+				logger.Error("Trying parsing HTTP:", err)
 			}
 		} else {
 			logger.Info("Unknown protocol")
 		}
 	}
 
-	srcConnTCP := cliConn.(*net.TCPConn)
-	dstConnTCP := dstConn.(*net.TCPConn)
+	srcConnTCP, dstConnTCP := cliConn.(*net.TCPConn), dstConn.(*net.TCPConn)
 	done := make(chan struct{})
 	go func() {
 		if _, err := io.Copy(dstConnTCP, srcConnTCP); err == nil {
-			if err = srcConnTCP.CloseRead(); err == nil {
-				logger.Debug("Closed client read")
+			if err = dstConnTCP.CloseWrite(); err == nil {
+				logger.Debug("Closed dest write")
 			} else {
-				logger.Debug("Close client read:", err)
+				logger.Debug("Close dest write:", err)
+				once.Do(closeBoth)
 			}
 		} else if !isUseOfClosedConn(err) {
 			logger.Error("Forward", originHost, "->", cliConn.RemoteAddr().String()+":", err)
-			closeBoth()
+			once.Do(closeBoth)
 		}
-		done <- struct{}{}
+		close(done)
 	}()
 	if _, err := io.Copy(srcConnTCP, dstConnTCP); err == nil {
-		if err = dstConnTCP.CloseRead(); err == nil {
-			logger.Debug("Closed dest read")
+		if err = srcConnTCP.CloseWrite(); err == nil {
+			logger.Debug("Closed client write")
 		} else {
-			logger.Debug("Close dest read:", err)
+			logger.Debug("Close client write:", err)
+			once.Do(closeBoth)
 		}
 	} else if !isUseOfClosedConn(err) {
 		logger.Error("Forward", cliConn.RemoteAddr().String(), "->", originHost+":", err)
-		closeBoth()
+		once.Do(closeBoth)
 	}
 	<-done
 }
 
 func handleHTTP(logger *log.Logger, req *http.Request,
 	replyFirst bool, originHost, target string,
-	cliConn, dstConn net.Conn) (ok bool) {
+	cliConn, dstConn net.Conn) (newConn net.Conn, ok bool) {
 	var err error
 	defer func() {
 		if err := req.Body.Close(); err != nil {
@@ -180,12 +200,12 @@ func handleHTTP(logger *log.Logger, req *http.Request,
 		}
 		return
 	}
-	return true
+	return dstConn, true
 }
 
 func handleTLS(logger *log.Logger, payloadLen uint16,
 	p Policy, replyFirst bool, originHost, target string,
-	br *bufio.Reader, cliConn, dstConn net.Conn) (ok bool) {
+	br *bufio.Reader, cliConn, dstConn net.Conn) (newConn net.Conn, ok bool) {
 	record := make([]byte, 5+payloadLen)
 	if _, err := io.ReadFull(br, record); err != nil {
 		logger.Error("Read first record:", err)
@@ -261,7 +281,7 @@ func handleTLS(logger *log.Logger, payloadLen uint16,
 				logger.Error("Send clienthello:", err)
 				return
 			}
-			logger.Info("clienthello sent directly")
+			logger.Info("ClientHello sent directly")
 		case ModeTLSRF:
 			err = sendRecords(dstConn, record, sniPos, sniLen,
 				p.NumRecords, p.NumSegments,
@@ -304,7 +324,7 @@ func handleTLS(logger *log.Logger, payloadLen uint16,
 				ttl = p.FakeTTL
 			}
 			err = desyncSend(
-				dstConn, ipv6, record,
+				newConn, ipv6, record,
 				sniPos, sniLen, ttl, p.FakeSleep,
 			)
 			if err != nil {
@@ -314,5 +334,5 @@ func handleTLS(logger *log.Logger, payloadLen uint16,
 			logger.Info("ClientHello sent with fake packet")
 		}
 	}
-	return true
+	return dstConn, true
 }
