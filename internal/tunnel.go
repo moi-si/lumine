@@ -17,8 +17,11 @@ import (
 func handleTunnel(
 	p Policy, replyFirst bool, dstConn, cliConn net.Conn, logger *log.Logger,
 	target, originHost string) {
-	var err error
-	var once sync.Once
+	var (
+		err    error
+		once   sync.Once
+		reader io.Reader
+	)
 	closeBoth := func() {
 		if err := cliConn.Close(); err == nil {
 			logger.Debug("Closed client conn")
@@ -43,6 +46,7 @@ func handleTunnel(
 				return
 			}
 		}
+		reader = cliConn
 	} else {
 		br := bufio.NewReader(cliConn)
 		peekBytes, err := br.Peek(10)
@@ -56,7 +60,7 @@ func handleTunnel(
 		}
 
 		if peekBytes[0] == 0x16 && peekBytes[1] == 0x03 {
-			payloadLen := binary.BigEndian.Uint16(peekBytes[3:5])
+			payloadLen := 5 + int(binary.BigEndian.Uint16(peekBytes[3:5]))
 			var ok bool
 			if dstConn, ok = handleTLS(logger, payloadLen, p, replyFirst, originHost, target,
 				br, cliConn, dstConn); !ok {
@@ -84,12 +88,13 @@ func handleTunnel(
 		} else {
 			logger.Info("Unknown protocol")
 		}
+		reader = br
 	}
 
 	srcConnTCP, dstConnTCP := cliConn.(*net.TCPConn), dstConn.(*net.TCPConn)
 	done := make(chan struct{})
 	go func() {
-		if _, err := io.Copy(dstConnTCP, srcConnTCP); err == nil {
+		if _, err := io.Copy(dstConnTCP, reader); err == nil {
 			if err = dstConnTCP.CloseWrite(); err == nil {
 				logger.Debug("Closed dest write")
 			} else {
@@ -203,12 +208,15 @@ func handleHTTP(logger *log.Logger, req *http.Request,
 	return dstConn, true
 }
 
-func handleTLS(logger *log.Logger, payloadLen uint16,
+func handleTLS(logger *log.Logger, recordLen int,
 	p Policy, replyFirst bool, originHost, target string,
 	br *bufio.Reader, cliConn, dstConn net.Conn) (newConn net.Conn, ok bool) {
-	record := make([]byte, 5+payloadLen)
-	if _, err := io.ReadFull(br, record); err != nil {
+	record := make([]byte, recordLen)
+	if n, err := br.Read(record); err != nil {
 		logger.Error("Read first record:", err)
+		return
+	} else if n < int(recordLen) {
+		logger.Error(joinString("Only ", n, " of ", recordLen, " bytes read"))
 		return
 	}
 	prtVer, sniPos, sniLen, hasKeyShare, err := parseClientHello(record)
@@ -324,7 +332,7 @@ func handleTLS(logger *log.Logger, payloadLen uint16,
 				ttl = p.FakeTTL
 			}
 			err = desyncSend(
-				newConn, ipv6, record,
+				dstConn, ipv6, record,
 				sniPos, sniLen, ttl, p.FakeSleep,
 			)
 			if err != nil {

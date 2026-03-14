@@ -95,7 +95,7 @@ func sendFakeData(
 
 	err = unix.SetsockoptInt(int(fd), level, opt, fakeTTL)
 	if err != nil {
-		return wrap("set fake ttl", err)
+		return wrap("set fake TTL", err)
 	}
 	iov := unix.Iovec{
 		Base: &data[0],

@@ -4,7 +4,6 @@ package lumine
 
 import (
 	"errors"
-	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -294,7 +293,7 @@ func sendWithOOB(conn net.Conn, data []byte, oob byte) error {
 		return wrap("WSASend", err)
 	}
 	if bytesSent != wsabuf.Len {
-		return fmt.Errorf("WSASend: only %d of %d bytes sent", bytesSent, wsabuf.Len)
+		return errors.New(joinString("WSASend: only ", bytesSent, " of ", wsabuf.Len, " bytes sent"))
 	}
 	return nil
 }
