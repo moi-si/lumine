@@ -18,9 +18,9 @@ func handleTunnel(
 	p Policy, replyFirst bool, dstConn, cliConn net.Conn, logger *log.Logger,
 	target, originHost string) {
 	var (
-		err    error
-		once   sync.Once
-		reader io.Reader
+		err       error
+		once      sync.Once
+		cliReader io.Reader
 	)
 	closeBoth := func() {
 		if err := cliConn.Close(); err == nil {
@@ -46,7 +46,7 @@ func handleTunnel(
 				return
 			}
 		}
-		reader = cliConn
+		cliReader = cliConn
 	} else {
 		br := bufio.NewReader(cliConn)
 		peekBytes, err := br.Peek(10)
@@ -59,10 +59,13 @@ func handleTunnel(
 			return
 		}
 
+		// Require the second byte to be 0x03 to avoid handling custom TLS
+		// variants like mmtls.
 		if peekBytes[0] == 0x16 && peekBytes[1] == 0x03 {
 			payloadLen := 5 + int(binary.BigEndian.Uint16(peekBytes[3:5]))
 			var ok bool
-			if dstConn, ok = handleTLS(logger, payloadLen, p, replyFirst, originHost, target,
+			if dstConn, ok = handleTLS(logger, payloadLen,
+				p, replyFirst, originHost, target,
 				br, cliConn, dstConn); !ok {
 				return
 			}
@@ -88,13 +91,23 @@ func handleTunnel(
 		} else {
 			logger.Info("Unknown protocol")
 		}
-		reader = br
+		// br has already buffered part of the client data (from Peek). If we
+		// continued reading from cliConn directly, some of the buffered data
+		// would NOT be included, leading to missing bytes. Using br ensures
+		// all data, both buffered and unbuffered, is consumed.
+		//
+		// Additionally, bufio.Reader preserves the underlying cliConn's
+		// WriteTo method, allowing io.Copy to use the optimized WriteTo
+		// mechanism for performance. This means io.Copy(dstConnTCP, cliReader)
+		// will be just as fast as io.Copy(cliConn, dstConn).
+		cliReader = br
 	}
 
+	// Get TCPConn type for CloseWrite support.
 	srcConnTCP, dstConnTCP := cliConn.(*net.TCPConn), dstConn.(*net.TCPConn)
 	done := make(chan struct{})
 	go func() {
-		if _, err := io.Copy(dstConnTCP, reader); err == nil {
+		if _, err := io.Copy(dstConnTCP, cliReader); err == nil {
 			if err = dstConnTCP.CloseWrite(); err == nil {
 				logger.Debug("Closed dest write")
 			} else {
@@ -286,7 +299,7 @@ func handleTLS(logger *log.Logger, recordLen int,
 		switch p.Mode {
 		case ModeDirect:
 			if _, err = dstConn.Write(record); err != nil {
-				logger.Error("Send clienthello:", err)
+				logger.Error("Send ClientHello:", err)
 				return
 			}
 			logger.Info("ClientHello sent directly")

@@ -14,6 +14,8 @@ const (
 )
 
 func init() {
+	// For systems that cannot access obtain the system DNS server addresses
+	// like Android.
 	net.DefaultResolver = &net.Resolver{
 		PreferGo: true,
 		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {

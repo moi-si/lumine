@@ -9,6 +9,11 @@ import (
 )
 
 func init() {
+	// On Android, the Go standard library does not read the system timezone
+	// and defaults to UTC. To obtain the correct system timezone, we use the
+	// `getprop persist.sys.timezone` command instead of cgo, which allows
+	// the software to remain pure Go. This approach ensures that time.Local
+	// is set according to the actual Android system timezone.
 	cmd := exec.Command("getprop", "persist.sys.timezone")
 	output, err := cmd.Output()
 	if err != nil {

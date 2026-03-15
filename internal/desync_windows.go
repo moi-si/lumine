@@ -259,41 +259,37 @@ func sendWithOOB(conn net.Conn, data []byte, oob byte) error {
 		return wrap("get raw conn", err)
 	}
 
-	var sock windows.Handle
-	controlErr := rawConn.Control(func(fd uintptr) {
-		sock = windows.Handle(fd)
+	var toSend []byte
+	if data == nil {
+		toSend = []byte{oob}
+	} else {
+		toSend = make([]byte, len(data)+1)
+		copy(toSend, data)
+		toSend[len(data)] = oob
+	}
+	wsabuf := windows.WSABuf{
+		Len: uint32(len(toSend)),
+		Buf: &toSend[0],
+	}
+	var n uint32
+	var innerErr error
+	err = rawConn.Write(func(fd uintptr) (done bool) {
+		innerErr = windows.WSASend(
+			windows.Handle(fd),
+			&wsabuf,
+			1,
+			&n,
+			windows.MSG_OOB,
+			nil,
+			nil,
+		)
+		return innerErr != windows.WSAEWOULDBLOCK
 	})
-	if controlErr != nil {
-		return wrap("control", controlErr)
-	}
-	if sock == 0 {
-		return errors.New("invalid socket handle")
-	}
-
-	toSend := make([]byte, len(data)+1)
-	copy(toSend, data)
-	toSend[len(data)] = oob
-	var (
-		wsabuf    windows.WSABuf
-		bytesSent uint32
-	)
-	wsabuf.Len = uint32(len(toSend))
-	wsabuf.Buf = &toSend[0]
-
-	err = windows.WSASend(
-		sock,
-		&wsabuf,
-		1,
-		&bytesSent,
-		windows.MSG_OOB,
-		nil,
-		nil,
-	)
 	if err != nil {
-		return wrap("WSASend", err)
+		return wrap("WSASend (MSG_OOB)", err)
 	}
-	if bytesSent != wsabuf.Len {
-		return errors.New(joinString("WSASend: only ", bytesSent, " of ", wsabuf.Len, " bytes sent"))
+	if innerErr != nil && innerErr != windows.NOERROR {
+		return wrap("WSASend (MSG_OOB)", innerErr)
 	}
 	return nil
 }
