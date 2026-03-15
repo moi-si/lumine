@@ -21,8 +21,9 @@
         "mod_minor_ver": true,
         "num_records": 4,
         "num_segs": 1,
-        "send_interval": "200ms",
+        "send_interval": "10ms",
         "oob": false,
+        "oob_ex": false,
         "fake_ttl": 0,
         "fake_sleep": "200ms",
         "attempts": 1,
@@ -41,7 +42,7 @@
             "tls13_only": false
         },
         "76.223.126.88;(216.150.1|216.150.16|216.198.79|216.230.84|216.230.86|64.29.17|76.76.21|66.33.60|198.169.1|198.169.2|64.239.109|64.239.123).0/24;64.125.81.216/29": {
-            "map_to": "64.29.17.1",
+            "map_to": "futuregadget-lab.com",
             "num_records": 1,
             "num_segs": 3,
             "oob": true
