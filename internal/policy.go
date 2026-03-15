@@ -106,6 +106,7 @@ type Policy struct {
 	NumRecords   int
 	NumSegments  int
 	OOB          BoolWithDefault
+	OOBEx        BoolWithDefault
 	ModMinorVer  BoolWithDefault
 	SendInterval time.Duration
 
@@ -130,6 +131,7 @@ func (p *Policy) UnmarshalJSON(data []byte) error {
 		NumRecords     *int            `json:"num_records"`
 		NumSegments    *int            `json:"num_segs"`
 		OOB            BoolWithDefault `json:"oob"`
+		OOBEx          BoolWithDefault `json:"oob_ex"`
 		ModMinorVer    BoolWithDefault `json:"mod_minor_ver"`
 		SendInterval   *string         `json:"send_interval"`
 		FakeTTL        *int            `json:"fake_ttl"`
@@ -147,6 +149,7 @@ func (p *Policy) UnmarshalJSON(data []byte) error {
 	p.Mode = tmp.Mode
 	p.DNSMode = tmp.DNSMode
 	p.OOB = tmp.OOB
+	p.OOBEx = tmp.OOBEx
 	p.ModMinorVer = tmp.ModMinorVer
 
 	if tmp.Host != nil && *tmp.Host == "" {
@@ -301,6 +304,9 @@ func (p Policy) String() string {
 		}
 		if p.OOB == BoolTrue {
 			fields = append(fields, "oob")
+		}
+		if p.OOBEx == BoolTrue {
+			fields = append(fields, "oob_ex")
 		}
 	case ModeTTLD:
 		if p.FakeTTL == 0 || p.FakeTTL == unsetInt {

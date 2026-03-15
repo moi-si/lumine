@@ -306,8 +306,8 @@ func handleTLS(logger *log.Logger, recordLen int,
 		case ModeTLSRF:
 			err = sendRecords(dstConn, record, sniPos, sniLen,
 				p.NumRecords, p.NumSegments,
-				p.OOB == BoolTrue, p.ModMinorVer == BoolTrue,
-				p.SendInterval)
+				p.OOB == BoolTrue, p.OOBEx == BoolTrue,
+				p.ModMinorVer == BoolTrue, p.SendInterval)
 			if err != nil {
 				logger.Error("TLS fragment:", err)
 				return

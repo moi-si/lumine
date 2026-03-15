@@ -328,7 +328,8 @@ func (c *interceptConn) Write(b []byte) (n int, err error) {
 	case ModeTLSRF:
 		err = sendRecords(c.Conn, b, sniPos, sniLen,
 			dohConnPolicy.NumRecords, dohConnPolicy.NumSegments,
-			dohConnPolicy.OOB == BoolTrue, dohConnPolicy.ModMinorVer == BoolTrue,
+			dohConnPolicy.OOB == BoolTrue, dohConnPolicy.OOBEx == BoolTrue,
+			dohConnPolicy.ModMinorVer == BoolTrue,
 			dohConnPolicy.SendInterval)
 	}
 	if err == nil {
