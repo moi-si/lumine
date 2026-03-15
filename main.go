@@ -4,11 +4,11 @@ import (
 	"flag"
 	"fmt"
 
-	"github.com/moi-si/lumine/internal"
+	lumine "github.com/moi-si/lumine/internal"
 )
 
 func main() {
-	fmt.Println("moi-si/lumine v0.7.7")
+	fmt.Println("moi-si/lumine v0.7.8")
 	fmt.Println("")
 	flag.Usage = func() {
 		flag.PrintDefaults()
