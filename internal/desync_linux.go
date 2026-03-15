@@ -67,17 +67,17 @@ func minReachableTTL(addr string, ipv6 bool, maxTTL, attempts int, dialTimeout t
 	return found, false, nil
 }
 
-func sendFakeData(
-	fd int,
+func sendWithNoise(
+	socketFD int,
 	fakeData, realData []byte,
 	fakeTTL, defaultTTL, level, opt int,
 	fakeSleep time.Duration,
 ) error {
-	pipeFds := make([]int, 2)
-	if err := unix.Pipe(pipeFds); err != nil {
-		return wrap("pipe creation", err)
+	pipeFDs := make([]int, 2)
+	if err := unix.Pipe2(pipeFDs, unix.O_CLOEXEC|unix.O_NONBLOCK); err != nil {
+		return wrap("create pipe", err)
 	}
-	pipeR, pipeW := pipeFds[0], pipeFds[1]
+	pipeR, pipeW := pipeFDs[0], pipeFDs[1]
 	defer unix.Close(pipeR)
 	defer unix.Close(pipeW)
 
@@ -93,7 +93,7 @@ func sendFakeData(
 	defer unix.Munmap(data)
 	copy(data, fakeData)
 
-	err = unix.SetsockoptInt(int(fd), level, opt, fakeTTL)
+	err = unix.SetsockoptInt(socketFD, level, opt, fakeTTL)
 	if err != nil {
 		return wrap("set fake TTL", err)
 	}
@@ -104,16 +104,15 @@ func sendFakeData(
 	if _, err := unix.Vmsplice(pipeW, []unix.Iovec{iov}, unix.SPLICE_F_GIFT); err != nil {
 		return wrap("vmsplice", err)
 	}
-	if _, err := unix.Splice(pipeR, nil, fd, nil, len(fakeData), 0); err != nil {
-		return wrap("splice", err)
-	}
+	unix.Splice(pipeR, nil, socketFD, nil, len(fakeData), unix.SPLICE_F_NONBLOCK)
+
 	time.Sleep(fakeSleep)
 
-	copy(data, realData) // will be automatically sent by the system.
+	copy(data, realData) // will be sent automatically by the system.
 
-	err = unix.SetsockoptInt(int(fd), level, opt, defaultTTL)
+	err = unix.SetsockoptInt(socketFD, level, opt, defaultTTL)
 	if err != nil {
-		return wrap("set default ttl", err)
+		return wrap("set default TTL", err)
 	}
 	return nil
 }
@@ -126,6 +125,7 @@ func desyncSend(
 	if err != nil {
 		return wrap("get raw conn", err)
 	}
+
 	var fd int
 	err = rawConn.Control(func(fileDesc uintptr) {
 		fd = int(fileDesc)
@@ -144,7 +144,7 @@ func desyncSend(
 	}
 	defaultTTL, err = unix.GetsockoptInt(fd, level, opt)
 	if err != nil {
-		return wrap("get default ttl", err)
+		return wrap("get default TTL", err)
 	}
 
 	if fakeSleep < minInterval {
@@ -161,7 +161,7 @@ func desyncSend(
 		fakeData = firstPacket[:cut]
 	}
 
-	err = sendFakeData(
+	err = sendWithNoise(
 		fd,
 		fakeData,
 		firstPacket[:cut],

@@ -7,7 +7,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -71,7 +70,7 @@ func minReachableTTL(addr string, ipv6 bool, maxTTL, attempts int, dialTimeout t
 	return found, false, nil
 }
 
-func sendFakeData(
+func sendWithNoise(
 	sockHandle windows.Handle,
 	fakeData, realData []byte,
 	fakeLen, fakeTTL, defaultTTL, level, opt int,
@@ -96,7 +95,7 @@ func sendFakeData(
 	)
 	defer windows.CloseHandle(fileHandle)
 	if err != nil {
-		return wrap("create file", err)
+		return wrap("create temp file", err)
 	}
 
 	var ov windows.Overlapped
@@ -119,7 +118,7 @@ func sendFakeData(
 		&ov,
 	)
 	if err != nil {
-		return wrap("write fake data", err)
+		return wrap("write fake data to temp", err)
 	}
 	if err = windows.SetEndOfFile(fileHandle); err != nil {
 		return wrap("set end of file", err)
@@ -153,7 +152,7 @@ func sendFakeData(
 	}
 	err = windows.WriteFile(
 		fileHandle,
-		realData, // will be automatically sent by the system.
+		realData, // will be sent automatically by the system.
 		nil,
 		&ov,
 	)
@@ -176,7 +175,7 @@ func sendFakeData(
 		return wrap("TransmitFile call failed on waiting for event", err)
 	}
 	if val != 0 {
-		return errors.New("TransmitFile call failed, val=" + strconv.FormatUint(uint64(val), 10))
+		return errors.New(joinString("TransmitFile call failed, val=", val))
 	}
 	return nil
 }
@@ -224,7 +223,7 @@ func desyncSend(
 		fakeData = firstPacket[:cut]
 	}
 
-	err = sendFakeData(
+	err = sendWithNoise(
 		sockHandle,
 		fakeData,
 		firstPacket[:cut],
@@ -237,7 +236,7 @@ func desyncSend(
 	if err != nil {
 		return wrap("first sending", err)
 	}
-	/*err = sendFakeData(
+	/*err = sendWithNoise(
 		sockHandle,
 		make([]byte, len(firstPacket)-cut),
 		firstPacket[cut:],
@@ -249,47 +248,6 @@ func desyncSend(
 	)*/
 	if _, err = conn.Write(firstPacket[cut:]); err != nil {
 		return wrap("second sending", err)
-	}
-	return nil
-}
-
-func sendWithOOB(conn net.Conn, data []byte, oob byte) error {
-	rawConn, err := getRawConn(conn)
-	if err != nil {
-		return wrap("get raw conn", err)
-	}
-
-	var toSend []byte
-	if data == nil {
-		toSend = []byte{oob}
-	} else {
-		toSend = make([]byte, len(data)+1)
-		copy(toSend, data)
-		toSend[len(data)] = oob
-	}
-	wsabuf := windows.WSABuf{
-		Len: uint32(len(toSend)),
-		Buf: &toSend[0],
-	}
-	var n uint32
-	var innerErr error
-	err = rawConn.Write(func(fd uintptr) (done bool) {
-		innerErr = windows.WSASend(
-			windows.Handle(fd),
-			&wsabuf,
-			1,
-			&n,
-			windows.MSG_OOB,
-			nil,
-			nil,
-		)
-		return innerErr != windows.WSAEWOULDBLOCK
-	})
-	if err != nil {
-		return wrap("WSASend (MSG_OOB)", err)
-	}
-	if innerErr != nil && innerErr != windows.NOERROR {
-		return wrap("WSASend (MSG_OOB)", innerErr)
 	}
 	return nil
 }

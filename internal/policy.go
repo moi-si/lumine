@@ -373,6 +373,9 @@ func mergePolicies(policies ...*Policy) Policy {
 		if merged.OOB == BoolUnset && p.OOB != BoolUnset {
 			merged.OOB = p.OOB
 		}
+		if merged.OOBEx == BoolUnset && p.OOBEx != BoolUnset {
+			merged.OOBEx = p.OOBEx
+		}
 		if merged.ModMinorVer == BoolUnset && p.ModMinorVer != BoolUnset {
 			merged.ModMinorVer = p.ModMinorVer
 		}
