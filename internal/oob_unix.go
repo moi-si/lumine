@@ -31,10 +31,10 @@ func sendWithOOB(conn net.Conn, data []byte, oob byte) error {
 	})
 
 	if err != nil {
-		return wrap("raw write", err)
+		return wrap("raw write (send)", err)
 	}
 	if innerErr != nil {
-		return wrap("unix.Send (MSG_OOB)", innerErr)
+		return wrap("send (MSG_OOB)", innerErr)
 	}
 	return nil
 }

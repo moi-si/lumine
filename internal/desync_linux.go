@@ -68,7 +68,7 @@ func minReachableTTL(addr string, ipv6 bool, maxTTL, attempts int, dialTimeout t
 }
 
 func sendWithNoise(
-	socketFD int,
+	socketFD int, rawConn syscall.RawConn,
 	fakeData, realData []byte,
 	fakeTTL, defaultTTL, level, opt int,
 	fakeSleep time.Duration,
@@ -81,7 +81,7 @@ func sendWithNoise(
 	defer unix.Close(pipeR)
 	defer unix.Close(pipeW)
 
-	pageSize := unix.Getpagesize()
+	pageSize := syscall.Getpagesize()
 	nPages := (len(fakeData) + pageSize - 1) / pageSize
 	mmapLen := nPages * pageSize
 	data, err := unix.Mmap(-1, 0, mmapLen,
@@ -104,7 +104,29 @@ func sendWithNoise(
 	if _, err := unix.Vmsplice(pipeW, []unix.Iovec{iov}, unix.SPLICE_F_GIFT); err != nil {
 		return wrap("vmsplice", err)
 	}
-	unix.Splice(pipeR, nil, socketFD, nil, len(fakeData), unix.SPLICE_F_NONBLOCK)
+
+	errChan, innerErrChan := make(chan error), make(chan error)
+	go func() {
+		var innerErr error
+		err := rawConn.Write(func(fd uintptr) (done bool) {
+			for {
+				_, innerErr = unix.Splice(
+					pipeR,
+					nil,
+					int(fd),
+					nil,
+					len(fakeData),
+					unix.SPLICE_F_NONBLOCK,
+				)
+				if innerErr == unix.EINTR {
+					continue
+				}
+				return innerErr != unix.EAGAIN
+			}
+		})
+		errChan <- err
+		innerErrChan <- innerErr
+	}()
 
 	time.Sleep(fakeSleep)
 
@@ -113,6 +135,14 @@ func sendWithNoise(
 	err = unix.SetsockoptInt(socketFD, level, opt, defaultTTL)
 	if err != nil {
 		return wrap("set default TTL", err)
+	}
+	err = <-errChan
+	innerErr := <-innerErrChan
+	if err != nil {
+		return wrap("raw write (splice)", err)
+	}
+	if innerErr != nil {
+		return wrap("splice", innerErr)
 	}
 	return nil
 }
@@ -162,7 +192,7 @@ func desyncSend(
 	}
 
 	err = sendWithNoise(
-		fd,
+		fd, rawConn,
 		fakeData,
 		firstPacket[:cut],
 		fakeTTL,

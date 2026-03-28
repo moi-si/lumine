@@ -299,7 +299,7 @@ func (p Policy) String() string {
 		if p.NumSegments != unsetInt && p.NumSegments != 1 {
 			fields = append(fields, strconv.Itoa(p.NumSegments)+" segments")
 		}
-		if p.NumSegments != 1 && p.SendInterval > 0 {
+		if p.SendInterval > 0 {
 			fields = append(fields, "send_interval="+p.SendInterval.String())
 		}
 		if p.OOB == BoolTrue {
