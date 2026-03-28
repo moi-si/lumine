@@ -6,11 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"time"
 
 	"github.com/elastic/go-freelru"
 	"github.com/miekg/dns"
+	"golang.org/x/sync/singleflight"
 )
 
 type DNSMode uint8
@@ -62,9 +64,9 @@ var (
 	dnsClient       *dns.Client
 	httpCli         *http.Client
 	dnsExchange     func(req *dns.Msg) (resp *dns.Msg, err error)
-	dnsCacheEnabled bool
 	dnsCache        *freelru.ShardedLRU[string, string]
 	dnsCacheTTL     time.Duration
+	dnsSingleflight *singleflight.Group
 )
 
 func do53Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
@@ -103,31 +105,25 @@ func dohExchange(req *dns.Msg) (resp *dns.Msg, err error) {
 	return
 }
 
-func pickFirstARecord(answer []dns.RR) string {
+func pickFirstARecord(answer []dns.RR) net.IP {
 	for _, ans := range answer {
 		if record, ok := ans.(*dns.A); ok {
-			return record.A.String()
+			return record.A
 		}
 	}
-	return ""
+	return nil
 }
 
-func pickFirstAAAARecord(answer []dns.RR) string {
+func pickFirstAAAARecord(answer []dns.RR) net.IP {
 	for _, ans := range answer {
 		if record, ok := ans.(*dns.AAAA); ok {
-			return record.AAAA.String()
+			return record.AAAA
 		}
 	}
-	return ""
+	return nil
 }
 
-func dnsResolve(domain string, dnsMode DNSMode) (ip string, cached bool, err error) {
-	if dnsCacheEnabled {
-		if ip, ok := dnsCache.Get(domain); ok {
-			return ip, true, nil
-		}
-	}
-
+func doDNSResolve(domain string, dnsMode DNSMode) (string, error) {
 	msg := new(dns.Msg)
 	switch dnsMode {
 	case DNSModePreferIPv4, DNSModeIPv4Only:
@@ -138,59 +134,83 @@ func dnsResolve(domain string, dnsMode DNSMode) (ip string, cached bool, err err
 
 	resp, err := dnsExchange(msg)
 	if err != nil {
-		return "", false, wrap("dns exchange", err)
+		return "", wrap("dns exchange", err)
 	}
 	if resp.Rcode != dns.RcodeSuccess {
-		return "", false, errors.New("bad rcode: " + dns.RcodeToString[resp.Rcode])
+		return "", errors.New("bad rcode: " + dns.RcodeToString[resp.Rcode])
 	}
 
+	var ip net.IP
 	switch dnsMode {
 	case DNSModeIPv4Only:
 		ip = pickFirstARecord(resp.Answer)
-		if ip == "" {
-			return "", false, errors.New("A record not found")
+		if ip == nil {
+			return "", errors.New("A record not found")
 		}
 	case DNSModeIPv6Only:
 		ip = pickFirstAAAARecord(resp.Answer)
-		if ip == "" {
-			return "", false, errors.New("AAAA record not found")
+		if ip == nil {
+			return "", errors.New("AAAA record not found")
 		}
 	case DNSModePreferIPv4:
 		ip = pickFirstARecord(resp.Answer)
-		if ip == "" {
+		if ip == nil {
 			msg.SetQuestion(domain+".", dns.TypeAAAA)
 			resp, err2 := dnsExchange(msg)
 			if err2 != nil {
-				return "", false, fmt.Errorf("dns exchange: %w; %w", err, err2)
+				return "", fmt.Errorf("dns exchange: %w; %w", err, err2)
 			}
 			if resp.Rcode != dns.RcodeSuccess {
-				return "", false, errors.New("bad rcode: " + dns.RcodeToString[resp.Rcode])
+				return "", errors.New("bad rcode: " + dns.RcodeToString[resp.Rcode])
 			}
 			ip = pickFirstAAAARecord(resp.Answer)
-			if ip == "" {
-				return "", false, errors.New("record not found")
+			if ip == nil {
+				return "", errors.New("record not found")
 			}
 		}
 	case DNSModePreferIPv6:
 		ip = pickFirstAAAARecord(resp.Answer)
-		if ip == "" {
+		if ip == nil {
 			msg.SetQuestion(domain+".", dns.TypeA)
 			resp, err2 := dnsExchange(msg)
 			if err2 != nil {
-				return "", false, fmt.Errorf("dns exchange: %w; %w", err, err2)
+				return "", fmt.Errorf("dns exchange: %w; %w", err, err2)
 			}
 			if resp.Rcode != dns.RcodeSuccess {
-				return "", false, errors.New("bad rcode: " + dns.RcodeToString[resp.Rcode])
+				return "", errors.New("bad rcode: " + dns.RcodeToString[resp.Rcode])
 			}
 			ip = pickFirstARecord(resp.Answer)
-			if ip == "" {
-				return "", false, errors.New("record not found")
+			if ip == nil {
+				return "", errors.New("record not found")
 			}
 		}
 	}
 
-	if dnsCacheEnabled {
-		dnsCache.AddWithLifetime(domain, ip, dnsCacheTTL)
+	ipStr := ip.String()
+	if dnsCache != nil {
+		dnsCache.AddWithLifetime(domain, ipStr, dnsCacheTTL)
 	}
+	return ipStr, nil
+}
+
+func dnsResolve(domain string, dnsMode DNSMode) (ip string, cached bool, err error) {
+	if dnsCache != nil {
+		if ip, ok := dnsCache.Get(domain); ok {
+			return ip, true, nil
+		}
+	}
+
+	if dnsSingleflight == nil {
+		ip, err = doDNSResolve(domain, dnsMode)
+	} else {
+		var v any
+		v, err, _ = dnsSingleflight.Do(domain, func() (any, error) {
+			return doDNSResolve(domain, dnsMode)
+		})
+		if err == nil {
+			ip = v.(string)
+		}
+	}
+
 	return
 }

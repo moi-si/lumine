@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"os"
 	"runtime"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -20,6 +19,7 @@ import (
 	"github.com/moi-si/addrtrie"
 	log "github.com/moi-si/mylog"
 	"golang.org/x/net/proxy"
+	"golang.org/x/sync/singleflight"
 )
 
 type Config struct {
@@ -31,8 +31,10 @@ type Config struct {
 	UDPSize           uint16             `json:"udp_minsize"`
 	DoHProxy          string             `json:"socks5_for_doh"`
 	FakeTTLRules      string             `json:"fake_ttl_rules"`
+	DNSSingleflight   bool               `json:"dns_singleflight"`
 	DNSCacheTTL       int                `json:"dns_cache_ttl"`
 	DNSCacheCapacity  int                `json:"dns_cache_cap"`
+	TTLSingleflight   bool               `json:"ttl_singleflight"`
 	TTLCacheTTL       int                `json:"ttl_cache_ttl"`
 	TTLCacheCapacity  int                `json:"ttl_cache_cap"`
 	IPPools           map[string]*IPPool `json:"ip_pools"`
@@ -57,98 +59,6 @@ type rule struct {
 	threshold int  // a
 	typ       byte // '-' or '='
 	val       int  // b
-}
-
-func parseRules(conf string) ([]rule, error) {
-	if len(conf) == 0 {
-		return nil, errors.New("empty config")
-	}
-	b := []byte(conf)
-
-	var rules []rule
-	i := 0
-	for i < len(b) {
-		start := i
-		for i < len(b) && b[i] >= '0' && b[i] <= '9' {
-			i++
-		}
-		if start == i {
-			return nil, errors.New("invalid rule: missing left number")
-		}
-		a := 0
-		for _, c := range b[start:i] {
-			a = a*10 + int(c-'0')
-		}
-
-		if i >= len(b) {
-			return nil, errors.New("invalid rule: missing operator")
-		}
-		op := b[i] // '-' or '='
-		if op != '-' && op != '=' {
-			return nil, errors.New("invalid operator")
-		}
-		i++
-
-		start = i
-		for i < len(b) && b[i] >= '0' && b[i] <= '9' {
-			i++
-		}
-		if start == i {
-			return nil, errors.New("invalid rule: missing right number")
-		}
-		val := 0
-		for _, c := range b[start:i] {
-			val = val*10 + int(c-'0')
-		}
-
-		rules = append(rules, rule{
-			threshold: a,
-			typ:       op,
-			val:       val,
-		})
-
-		if i < len(b) && b[i] == ';' {
-			i++
-		}
-	}
-	sort.Slice(rules, func(i, j int) bool {
-		return rules[i].threshold > rules[j].threshold
-	})
-	return rules, nil
-}
-
-func loadFakeTTLRules(conf string) error {
-	rules, err := parseRules(conf)
-	if err != nil {
-		return err
-	}
-	if rules == nil {
-		calcTTL = func(int) (int, error) {
-			val := 0
-			for i := range len(conf) {
-				c := conf[i]
-				if c < '0' || c > '9' {
-					return 0, errors.New("invalid integer config")
-				}
-				val = val*10 + int(c-'0')
-			}
-			return val, nil
-		}
-	} else {
-		calcTTL = func(ttl int) (int, error) {
-			for _, r := range rules {
-				if ttl >= r.threshold {
-					if r.typ == '-' {
-						return ttl - r.val, nil
-					}
-					// r.typ == '='
-					return r.val, nil
-				}
-			}
-			return 0, errors.New("no matching TTL rule")
-		}
-	}
-	return nil
 }
 
 func LoadConfig(filePath string) (string, string, error) {
@@ -189,6 +99,13 @@ func LoadConfig(filePath string) (string, string, error) {
 		}
 	}
 
+	if conf.DNSSingleflight {
+		dnsSingleflight = new(singleflight.Group)
+	}
+	if conf.TTLSingleflight {
+		ttlSingleflight = new(singleflight.Group)
+	}
+
 	if conf.DNSCacheTTL < 0 {
 		return "", "", errors.New("invalid dns_cache_ttl: " + strconv.Itoa(conf.DNSCacheTTL))
 	}
@@ -200,7 +117,6 @@ func LoadConfig(filePath string) (string, string, error) {
 		if err != nil {
 			return "", "", wrap("init dns cache", err)
 		}
-		dnsCacheEnabled = true
 		dnsCacheTTL = time.Duration(conf.DNSCacheTTL) * time.Second
 	}
 

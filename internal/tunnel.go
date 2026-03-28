@@ -311,7 +311,7 @@ func handleTLS(logger *log.Logger, recordLen int,
 			ipv6 := target[0] == '['
 			if p.FakeTTL == 0 || p.FakeTTL == -1 {
 				var cached bool
-				ttl, cached, err = minReachableTTL(target, ipv6, p.MaxTTL, p.Attempts, p.SingleTimeout)
+				ttl, cached, err = getMinimalReachableTTL(target, ipv6, p.MaxTTL, p.Attempts, p.SingleTimeout)
 				if err != nil {
 					logger.Error("Detect minimum reachable ttl:", err)
 					return

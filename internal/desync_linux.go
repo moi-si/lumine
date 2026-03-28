@@ -3,7 +3,9 @@
 package lumine
 
 import (
+	"errors"
 	"net"
+	"os"
 	"syscall"
 	"time"
 
@@ -12,20 +14,18 @@ import (
 
 const minInterval = 100 * time.Millisecond
 
-func minReachableTTL(addr string, ipv6 bool, maxTTL, attempts int, dialTimeout time.Duration) (int, bool, error) {
-	if ttlCacheEnabled {
-		if ttl, ok := ttlCache.Get(addr); ok {
-			return ttl, true, nil
-		}
-	}
-
+func detectMinimalReachableTTL(
+	addr string,
+	ipv6 bool,
+	maxTTL, attempts int,
+	dialTimeout time.Duration,
+) (int, error) {
 	var level, opt int
 	if ipv6 {
 		level, opt = unix.IPPROTO_IPV6, unix.IPV6_UNICAST_HOPS
 	} else {
 		level, opt = unix.IPPROTO_IP, unix.IP_TTL
 	}
-
 	dialer := net.Dialer{Timeout: dialTimeout}
 
 	low, high := 1, maxTTL
@@ -36,9 +36,14 @@ func minReachableTTL(addr string, ipv6 bool, maxTTL, attempts int, dialTimeout t
 		dialer.Control = func(_, _ string, c syscall.RawConn) error {
 			var innerErr error
 			if err := c.Control(func(fd uintptr) {
-				innerErr = unix.SetsockoptInt(int(fd), level, opt, mid)
-			}); err != nil{
-				return wrap("control", err)
+				innerErr = unix.SetsockoptInt(
+					int(fd),
+					level,
+					opt,
+					mid,
+				)
+			}); err != nil {
+				return wrap("raw control", err)
 			}
 			if innerErr != nil {
 				return wrap("setsockopt", innerErr)
@@ -53,6 +58,9 @@ func minReachableTTL(addr string, ipv6 bool, maxTTL, attempts int, dialTimeout t
 				ok = true
 				break
 			}
+			if !errors.Is(err, os.ErrDeadlineExceeded) {
+				return -1, wrap("dial "+formatInt(mid), err)
+			}
 		}
 		if ok {
 			found = mid
@@ -65,8 +73,7 @@ func minReachableTTL(addr string, ipv6 bool, maxTTL, attempts int, dialTimeout t
 	if ttlCacheEnabled && found != -1 {
 		ttlCache.AddWithLifetime(addr, found, ttlCacheTTL)
 	}
-
-	return found, false, nil
+	return found, nil
 }
 
 func sendWithNoise(
@@ -163,7 +170,7 @@ func desyncSend(
 		fd = int(fileDesc)
 	})
 	if err != nil {
-		return wrap("control", err)
+		return wrap("raw control", err)
 	}
 
 	var level, opt, defaultTTL int
