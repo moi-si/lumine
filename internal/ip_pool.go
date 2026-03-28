@@ -379,7 +379,7 @@ func getFromIPPool(tag string) (ipStr string, err error) {
 	}
 	ipPool, exists := IPPools[tag]
 	if !exists {
-		return "", errors.New("ip pool " + tag + " is not exists")
+		return "", errors.New("ip pool " + tag + " does not exist")
 	}
 	ip := ipPool.Get()
 	if ip == "" {
