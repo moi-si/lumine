@@ -24,12 +24,6 @@ func main() {
 		return
 	}
 
-	if len(lumine.IPPools) != 0 {
-		for _, pool := range lumine.IPPools {
-			defer pool.Close()
-		}
-	}
-
 	done := make(chan struct{})
 	go lumine.SOCKS5Accept(addr, socks5Addr, done)
 	lumine.HTTPAccept(hAddr, httpAddr)

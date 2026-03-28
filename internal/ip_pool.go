@@ -362,14 +362,14 @@ func (p *IPPool) Get() string {
 	return p.ips[indexes[0]]
 }
 
-func (p *IPPool) Close() {
+/*func (p *IPPool) Close() {
 	if p.cancel != nil {
 		p.cancel()
 		p.logger.Debug("IP pool closed")
 	}
 }
 
-/*func (p *IPPool) Reset() {
+func (p *IPPool) Reset() {
 	p.scan()
 }*/
 
