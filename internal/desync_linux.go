@@ -34,14 +34,16 @@ func minReachableTTL(addr string, ipv6 bool, maxTTL, attempts int, dialTimeout t
 	for low <= high {
 		mid := (low + high) / 2
 		dialer.Control = func(_, _ string, c syscall.RawConn) error {
-			var sockErr error
-			err := c.Control(func(fd uintptr) {
-				sockErr = unix.SetsockoptInt(int(fd), level, opt, mid)
-			})
-			if err != nil {
+			var innerErr error
+			if err := c.Control(func(fd uintptr) {
+				innerErr = unix.SetsockoptInt(int(fd), level, opt, mid)
+			}); err != nil{
 				return wrap("control", err)
 			}
-			return sockErr
+			if innerErr != nil {
+				return wrap("setsockopt", innerErr)
+			}
+			return nil
 		}
 		var ok bool
 		for range attempts {
@@ -61,7 +63,7 @@ func minReachableTTL(addr string, ipv6 bool, maxTTL, attempts int, dialTimeout t
 	}
 
 	if ttlCacheEnabled && found != -1 {
-		ttlCache.AddWithLifetime(addr, found, dnsCacheTTL)
+		ttlCache.AddWithLifetime(addr, found, ttlCacheTTL)
 	}
 
 	return found, false, nil
@@ -73,8 +75,8 @@ func sendWithNoise(
 	fakeTTL, defaultTTL, level, opt int,
 	fakeSleep time.Duration,
 ) error {
-	pipeFDs := make([]int, 2)
-	if err := unix.Pipe2(pipeFDs, unix.O_CLOEXEC|unix.O_NONBLOCK); err != nil {
+	var pipeFDs [2]int
+	if err := unix.Pipe2(pipeFDs[:], unix.O_CLOEXEC|unix.O_NONBLOCK); err != nil {
 		return wrap("create pipe", err)
 	}
 	pipeR, pipeW := pipeFDs[0], pipeFDs[1]

@@ -4,9 +4,9 @@ package lumine
 
 import (
 	"errors"
+	"io"
 	"net"
 	"os"
-	"path/filepath"
 	"syscall"
 	"time"
 
@@ -37,14 +37,16 @@ func minReachableTTL(addr string, ipv6 bool, maxTTL, attempts int, dialTimeout t
 	for low <= high {
 		mid := (low + high) / 2
 		dialer.Control = func(_, _ string, c syscall.RawConn) error {
-			var sockErr error
-			err := c.Control(func(fd uintptr) {
-				sockErr = windows.SetsockoptInt(windows.Handle(fd), level, opt, mid)
-			})
-			if err != nil {
+			var innerErr error
+			if err := c.Control(func(fd uintptr) {
+				innerErr = windows.SetsockoptInt(windows.Handle(fd), level, opt, mid)
+			}); err != nil{
 				return wrap("control", err)
 			}
-			return sockErr
+			if innerErr != nil {
+				return wrap("setsockopt", innerErr)
+			}
+			return nil
 		}
 		var ok bool
 		for range attempts {
@@ -78,106 +80,105 @@ func sendWithNoise(
 ) error {
 	toWrite := uint32(fakeLen)
 
-	tmpFile := filepath.Join(os.TempDir(), uuid.New().String())
-	defer os.Remove(tmpFile)
-	ptr, err := windows.UTF16PtrFromString(tmpFile)
-	if err != nil {
-		return err
-	}
-	fileHandle, err := windows.CreateFile(
-		ptr,
-		windows.GENERIC_READ|windows.GENERIC_WRITE,
-		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
-		nil,
-		windows.CREATE_ALWAYS,
-		windows.FILE_ATTRIBUTE_NORMAL|windows.FILE_FLAG_DELETE_ON_CLOSE,
-		windows.InvalidHandle,
-	)
-	defer windows.CloseHandle(fileHandle)
+	tmpFile, err := os.CreateTemp("", uuid.New().String())
 	if err != nil {
 		return wrap("create temp file", err)
 	}
+	defer os.Remove(tmpFile.Name())
+	defer tmpFile.Close()
 
-	var ov windows.Overlapped
-	eventHandle, err := windows.CreateEvent(nil, 1, 0, nil)
-	defer windows.CloseHandle(eventHandle)
-	if err != nil {
-		return wrap("create event", err)
+	if _, err = tmpFile.Seek(0, io.SeekStart); err != nil {
+		return wrap("seek start", err)
 	}
-	ov.HEvent = eventHandle
 
-	var zero *int32
-	_, err = windows.SetFilePointer(fileHandle, 0, zero, 0)
+	_, err = tmpFile.Write(fakeData[:fakeLen])
 	if err != nil {
-		return wrap("set file pointer", err)
+		return wrap("write fake data", err)
 	}
-	err = windows.WriteFile(
-		fileHandle,
-		fakeData,
-		nil,
-		&ov,
-	)
-	if err != nil {
-		return wrap("write fake data to temp", err)
+
+	if err = tmpFile.Truncate(int64(fakeLen)); err != nil {
+		return wrap("truncate fake", err)
 	}
-	if err = windows.SetEndOfFile(fileHandle); err != nil {
-		return wrap("set end of file", err)
+
+	if err = tmpFile.Sync(); err != nil {
+		return wrap("sync fake data", err)
 	}
-	err = windows.SetsockoptInt(sockHandle, level, opt, fakeTTL)
-	if err != nil {
+
+	if err = windows.SetsockoptInt(sockHandle, level, opt, fakeTTL); err != nil {
 		return wrap("set fake TTL", err)
 	}
 
-	_, err = windows.SetFilePointer(fileHandle, 0, zero, 0)
-	if err != nil {
-		return wrap("set file pointer", err)
+	if _, err = tmpFile.Seek(0, io.SeekStart); err != nil {
+		return wrap("seek start", err)
 	}
+
+	var ov windows.Overlapped
+	ov.HEvent, err = windows.CreateEvent(nil, 1, 0, nil)
+	if err != nil {
+		return wrap("create event", err)
+	}
+	defer windows.CloseHandle(ov.HEvent)
+
 	if sem != nil {
 		sem <- struct{}{}
 		defer func() { <-sem }()
 	}
-	windows.TransmitFile(
+
+	if err = windows.TransmitFile(
 		sockHandle,
-		fileHandle,
+		windows.Handle(tmpFile.Fd()),
 		toWrite,
 		toWrite,
 		&ov,
 		nil,
 		windows.TF_USE_KERNEL_APC|windows.TF_WRITE_BEHIND,
-	)
+	); err != nil && err != windows.ERROR_IO_PENDING {
+		return wrap("TransmitFile: unexpected error", err)
+	}
+
 	time.Sleep(fakeSleep)
 
-	if _, err = windows.SetFilePointer(fileHandle, 0, zero, 0); err != nil {
-		return wrap("set file pointer", err)
+	if _, err = tmpFile.Seek(0, io.SeekStart); err != nil {
+		return wrap("seek start", err)
 	}
-	err = windows.WriteFile(
-		fileHandle,
-		realData, // will be sent automatically by the system.
-		nil,
-		&ov,
-	)
+
+	_, err = tmpFile.Write(realData[:fakeLen])
 	if err != nil {
-		return wrap("write real data to temp", err)
+		return wrap("write real data", err)
 	}
-	if err = windows.SetEndOfFile(fileHandle); err != nil {
-		return wrap("set end of file", err)
+
+	if err = tmpFile.Truncate(int64(fakeLen)); err != nil {
+		return wrap("truncate real", err)
 	}
-	_, err = windows.SetFilePointer(fileHandle, 0, zero, 0)
-	if err != nil {
-		return wrap("set file pointer", err)
+
+	if err = tmpFile.Sync(); err != nil {
+		return wrap("sync real data", err)
+	}
+
+	if _, err = tmpFile.Seek(0, io.SeekStart); err != nil {
+		return wrap("seek start", err)
 	}
 	if err = windows.SetsockoptInt(sockHandle, level, opt, defaultTTL); err != nil {
 		return wrap("set default TTL", err)
 	}
 
-	val, err := windows.WaitForSingleObject(ov.HEvent, 5000)
+	event, err := windows.WaitForSingleObject(ov.HEvent, 5000)
 	if err != nil {
-		return wrap("TransmitFile call failed on waiting for event", err)
+		return wrap("wait for event", err)
 	}
-	if val != 0 {
-		return errors.New(joinString("TransmitFile call failed, val=", val))
+
+	switch event {
+	case windows.WAIT_OBJECT_0:
+		return nil
+	case uint32(windows.WAIT_TIMEOUT):
+		return errors.New("TransmitFile timeout (5s)")
+	case windows.WAIT_ABANDONED:
+		return errors.New("TransmitFile failed: WAIT_ABANDONED")
+	case windows.WAIT_FAILED:
+		return wrap("TransmitFile failed: WAIT_FAILED", windows.GetLastError())
+	default:
+		return errors.New("TransmitFile failed: unexpected event: " + formatUint(event))
 	}
-	return nil
 }
 
 func desyncSend(
