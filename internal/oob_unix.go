@@ -9,7 +9,7 @@ import (
 )
 
 func sendWithOOB(conn net.Conn, data []byte, oob byte) error {
-	// Tested on Android; does not work as expected.
+	// Tested on Android; did not work as expected.
 	rawConn, err := getRawConn(conn)
 	if err != nil {
 		return wrap("get raw conn", err)
@@ -21,12 +21,17 @@ func sendWithOOB(conn net.Conn, data []byte, oob byte) error {
 
 	var innerErr error
 	err = rawConn.Write(func(fd uintptr) (done bool) {
-		innerErr = unix.Send(int(fd), toSend, unix.MSG_OOB)
-		return innerErr != unix.EAGAIN
+		for {
+			innerErr = unix.Send(int(fd), toSend, unix.MSG_OOB)
+			if innerErr == unix.EINTR {
+				continue
+			}
+			return innerErr != unix.EAGAIN
+		}
 	})
 
 	if err != nil {
-		return wrap("rawConn.Write", err)
+		return wrap("raw write", err)
 	}
 	if innerErr != nil {
 		return wrap("unix.Send (MSG_OOB)", innerErr)

@@ -171,19 +171,10 @@ func desyncSend(
 		fakeSleep,
 	)
 	if err != nil {
-		return wrap("first sending", err)
+		return wrap("send data with noise", err)
 	}
-	/*err = sendFakeData(
-		fd,
-		make([]byte, len(firstPacket)-cut),
-		firstPacket[cut:],
-		fakeTTL,
-		defaultTTL,
-		level, opt,
-		fakeSleep,
-	)*/
 	if _, err = conn.Write(firstPacket[cut:]); err != nil {
-		return wrap("second sending", err)
+		return wrap("send remaining data", err)
 	}
 	return nil
 }

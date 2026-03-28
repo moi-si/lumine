@@ -64,7 +64,7 @@ func minReachableTTL(addr string, ipv6 bool, maxTTL, attempts int, dialTimeout t
 	}
 
 	if ttlCacheEnabled && found != -1 {
-		ttlCache.AddWithLifetime(addr, found, dnsCacheTTL)
+		ttlCache.AddWithLifetime(addr, found, ttlCacheTTL)
 	}
 
 	return found, false, nil
@@ -234,20 +234,10 @@ func desyncSend(
 		fakeSleep,
 	)
 	if err != nil {
-		return wrap("first sending", err)
+		return wrap("send data with noise", err)
 	}
-	/*err = sendWithNoise(
-		sockHandle,
-		make([]byte, len(firstPacket)-cut),
-		firstPacket[cut:],
-		len(firstPacket)-cut,
-		fakeTTL,
-		defaultTTL,
-		level, opt,
-		fakeSleep,
-	)*/
 	if _, err = conn.Write(firstPacket[cut:]); err != nil {
-		return wrap("second sending", err)
+		return wrap("send remaining data", err)
 	}
 	return nil
 }

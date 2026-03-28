@@ -39,7 +39,7 @@ func sendWithOOB(conn net.Conn, data []byte, oob byte) error {
 		return innerErr != windows.WSAEWOULDBLOCK
 	})
 	if err != nil {
-		return wrap("rawConn.Write", err)
+		return wrap("raw write", err)
 	}
 	if innerErr != nil && innerErr != windows.NOERROR {
 		return wrap("WSASend (MSG_OOB)", innerErr)
