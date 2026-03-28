@@ -336,3 +336,12 @@ func wrap(msg string, cause error) error {
 		cause: cause,
 	}
 }
+
+func bytesHasPrefix(b []byte, prefixes ...string) bool {
+	for _, prefix := range prefixes {
+		if string(b[:len(prefix)]) == prefix {
+			return true
+		}
+	}
+	return false
+}

@@ -19,13 +19,14 @@ func sendRecords(conn net.Conn, clientHello []byte,
 			if err := sendWithOOB(conn, clientHello[:15], clientHello[15]); err != nil {
 				return wrap("oob 1", err)
 			}
-			if err := sendWithOOB(conn, clientHello[16:20], 0x0); err != nil {
+			if err := sendWithOOB(conn, clientHello[16:35], 0x0); err != nil {
 				return wrap("oob 2", err)
 			}
 			if interval > 0 {
 				time.Sleep(interval)
 			}
-			clientHello = clientHello[20:]
+			clientHello = clientHello[35:]
+			offset -= 35
 		}
 		if segments == 1 {
 			if _, err := conn.Write(clientHello); err != nil {
@@ -37,7 +38,7 @@ func sendRecords(conn net.Conn, clientHello []byte,
 		leftSegments = segments / 2
 		rightSegments = segments - leftSegments
 		packets := make([][]byte, 0, segments)
-		cut, _ := findLastDot(clientHello, offset-20, length)
+		cut, _ := findLastDot(clientHello, offset, length)
 		splitAndAppend(clientHello[:cut], nil, leftSegments, &packets)
 		splitAndAppend(clientHello[cut:], nil, rightSegments, &packets)
 		for i, packet := range packets {
@@ -106,13 +107,13 @@ func sendRecords(conn net.Conn, clientHello []byte,
 		if err := sendWithOOB(conn, merged[:15], merged[15]); err != nil {
 			return wrap("oob 1", err)
 		}
-		if err := sendWithOOB(conn, merged[16:20], 0x0); err != nil {
+		if err := sendWithOOB(conn, merged[16:35], 0x0); err != nil {
 			return wrap("oob 2", err)
 		}
 		if interval > 0 {
 			time.Sleep(interval)
 		}
-		merged = merged[20:]
+		merged = merged[35:]
 	}
 	if segments == 1 || len(merged) <= segments {
 		_, err := conn.Write(merged)

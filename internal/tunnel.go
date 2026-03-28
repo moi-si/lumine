@@ -2,7 +2,6 @@ package lumine
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/binary"
 	"errors"
 	"io"
@@ -75,14 +74,10 @@ func handleTunnel(
 				br, cliConn, dstConn); !ok {
 				return
 			}
-		} else if bytes.HasPrefix(peekBytes, []byte("GET ")) ||
-			bytes.HasPrefix(peekBytes, []byte("POST ")) ||
-			bytes.HasPrefix(peekBytes, []byte("HEAD ")) ||
-			bytes.HasPrefix(peekBytes, []byte("PUT ")) ||
-			bytes.HasPrefix(peekBytes, []byte("DELETE ")) ||
-			bytes.HasPrefix(peekBytes, []byte("OPTIONS ")) ||
-			bytes.HasPrefix(peekBytes, []byte("TRACE ")) ||
-			bytes.HasPrefix(peekBytes, []byte("PATCH ")) {
+		} else if bytesHasPrefix(peekBytes,
+			"GET ", "POST ", "HEAD ", "PUT ", "DELETE ",
+			"OPTIONS ", "TRACE ", "PATCH ",
+		) {
 			req, err := http.ReadRequest(br)
 			if err == nil {
 				var ok bool
@@ -121,7 +116,7 @@ func handleTunnel(
 				once.Do(closeBoth)
 			}
 		} else if !isUseOfClosedConn(err) {
-			logger.Error("Forward", originHost, "->", cliConn.RemoteAddr().String()+":", err)
+			logger.Error("Forward", originHost+"->"+cliConn.RemoteAddr().String()+":", err)
 			once.Do(closeBoth)
 		}
 		close(done)
@@ -134,7 +129,7 @@ func handleTunnel(
 			once.Do(closeBoth)
 		}
 	} else if !isUseOfClosedConn(err) {
-		logger.Error("Forward", cliConn.RemoteAddr().String(), "->", originHost+":", err)
+		logger.Error("Forward", cliConn.RemoteAddr().String()+"->"+originHost+":", err)
 		once.Do(closeBoth)
 	}
 	<-done

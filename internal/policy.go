@@ -276,13 +276,13 @@ func (p Policy) String() string {
 		fields = append(fields, "timeout="+p.ConnectTimeout.String())
 	}
 	if p.Port != unsetInt && p.Port != 0 {
-		fields = append(fields, ":"+strconv.FormatInt(int64(p.Port), 10))
+		fields = append(fields, ":"+formatInt(p.Port))
 	}
 	if p.Host == nil || *p.Host == "" {
 		fields = append(fields, p.DNSMode.String())
 	}
 	if p.HttpStatus > 0 {
-		fields = append(fields, "http_status="+strconv.Itoa(p.HttpStatus))
+		fields = append(fields, "http_status="+formatInt(p.HttpStatus))
 	}
 	if p.TLS13Only == BoolTrue {
 		fields = append(fields, "tls13_only")
@@ -407,7 +407,7 @@ func mergePolicies(policies ...*Policy) Policy {
 	return merged
 }
 
-func genPolicy(logger *log.Logger, originHost string) (dstHost string, p Policy, fail bool, block bool) {
+func genPolicy(logger *log.Logger, originHost string) (dstHost string, p Policy, failed bool, blocked bool) {
 	var err error
 
 	if net.ParseIP(originHost) != nil {

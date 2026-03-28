@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -92,13 +91,13 @@ func handleConnect(logger *log.Logger, w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	dstHost, policy, fail, block := genPolicy(logger, originHost)
+	dstHost, policy, fail, blocked := genPolicy(logger, originHost)
 	if fail {
 		http.Error(w, status500, http.StatusInternalServerError)
 		return
 	}
-	if block {
-		logger.Error("Connection blocked")
+	if blocked {
+		logger.Info("Connection blocked")
 		http.Error(w, status403, http.StatusForbidden)
 		return
 	}
@@ -111,7 +110,7 @@ func handleConnect(logger *log.Logger, w http.ResponseWriter, req *http.Request)
 	}
 
 	if policy.Port != 0 && policy.Port != -1 {
-		dstPort = strconv.FormatInt(int64(policy.Port), 10)
+		dstPort = formatInt(policy.Port)
 	}
 
 	dest := net.JoinHostPort(dstHost, dstPort)
@@ -144,14 +143,8 @@ func handleConnect(logger *log.Logger, w http.ResponseWriter, req *http.Request)
 	}()
 
 	replyFirst := policy.ReplyFirst == BoolTrue
-	if replyFirst {
-		_, err = cliConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
-		if err != nil {
-			logger.Error("Send 200:", err)
-			return
-		}
-	} else {
-		dstConn, err = net.Dial("tcp", dest)
+	if !replyFirst {
+		dstConn, err = net.DialTimeout("tcp", dest, policy.ConnectTimeout)
 		if err != nil {
 			logger.Error("Connection failed:", err)
 			_, err = cliConn.Write([]byte("HTTP/1.1 502 Bad Gateway\r\n\r\n"))
@@ -160,11 +153,11 @@ func handleConnect(logger *log.Logger, w http.ResponseWriter, req *http.Request)
 			}
 			return
 		}
-		_, err = cliConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
-		if err != nil {
-			logger.Error("Send 200:", err)
-			return
-		}
+	}
+	_, err = cliConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
+	if err != nil {
+		logger.Error("Send 200:", err)
+		return
 	}
 
 	closeHere = false
@@ -191,8 +184,6 @@ func forwardHTTPRequest(logger *log.Logger, w http.ResponseWriter, originReq *ht
 			port = "80"
 		}
 	}
-
-	logger.Info("method="+originReq.Method, "url="+originReq.URL.String(), "host="+host)
 
 	var p Policy
 	if domainPolicy, exists := domainMatcher.Find(originHost); exists {
@@ -260,7 +251,7 @@ func forwardHTTPRequest(logger *log.Logger, w http.ResponseWriter, originReq *ht
 	}
 
 	if p.Port != 0 && p.Port != -1 {
-		dstPort = strconv.FormatInt(int64(p.Port), 10)
+		dstPort = formatInt(p.Port)
 	}
 
 	disableRedirect := p.Host != nil && strings.HasPrefix(*p.Host, "^")

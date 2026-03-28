@@ -190,14 +190,14 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 			logger.Error("Read domain address:", err)
 		}
 		originHost = string(domainBytes)
-		var fail, block bool
-		dstHost, policy, fail, block = genPolicy(logger, originHost)
-		if fail {
+		var failed, blocked bool
+		dstHost, policy, failed, blocked = genPolicy(logger, originHost)
+		if failed {
 			sendReply(logger, cliConn, 0x01)
 			return
 		}
-		if block {
-			logger.Error("Connection blocked:", originHost)
+		if blocked {
+			logger.Info("Connection blocked:", originHost)
 			if policy.ReplyFirst == BoolTrue {
 				sendReply(logger, cliConn, socks5RepSuccess)
 			} else {
