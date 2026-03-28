@@ -220,11 +220,10 @@ func desyncSend(
 		fakeData = make([]byte, cut)
 		copy(fakeData, firstPacket[:sniPos])
 	} else {
-		cut = sniLen/2 + sniPos
 		fakeData = firstPacket[:cut]
 	}
 
-	err = sendWithNoise(
+	if err = sendWithNoise(
 		sockHandle,
 		fakeData,
 		firstPacket[:cut],
@@ -233,8 +232,7 @@ func desyncSend(
 		defaultTTL,
 		level, opt,
 		fakeSleep,
-	)
-	if err != nil {
+	); err != nil {
 		return wrap("send data with noise", err)
 	}
 	if _, err = conn.Write(firstPacket[cut:]); err != nil {
