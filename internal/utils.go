@@ -331,7 +331,7 @@ func (e *wrappedError) Error() string {
 	return e.msg + ": " + e.cause.Error()
 }
 
-func (e *wrappedError) Unwarp() error {
+func (e *wrappedError) Unwrap() error {
 	return e.cause
 }
 

@@ -99,7 +99,7 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 		return
 	}
 	if header[0] != 0x05 {
-		logger.Error("Excepted socks version 5, but found", byteToStirng(header[0]))
+		logger.Error("Expected socks version 5, but got", byteToStirng(header[0]))
 		return
 	}
 	nMethods := int(header[1])
@@ -127,11 +127,11 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 		return
 	}
 	if header[0] != 0x05 {
-		logger.Error("Expected socks version 5, but found", byteToStirng(header[0]))
+		logger.Error("Expected socks version 5, but got", byteToStirng(header[0]))
 		return
 	}
 	if header[1] != 0x01 {
-		logger.Error("Expected cmd CONNECT, but found", byteToStirng(header[1]))
+		logger.Error("Expected cmd CONNECT, but got", byteToStirng(header[1]))
 		sendReply(logger, cliConn, socks5RepCmdNotSupported)
 		return
 	}
@@ -144,7 +144,7 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 	case 0x01: // IPv4 address
 		ipBytes, err := readN(cliConn, 4)
 		if err != nil {
-			logger.Error("Read ipv4 address:", err)
+			logger.Error("Read IPv4 address:", err)
 			return
 		}
 		originHost = net.IP(ipBytes).String()
@@ -163,7 +163,7 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 	case 0x04: // IPv6 address
 		ipBytes, err := readN(cliConn, 16)
 		if err != nil {
-			logger.Error("Read ipv6 address:", err)
+			logger.Error("Read IPv6 address:", err)
 			return
 		}
 		originHost = net.IP(ipBytes).String()
@@ -226,7 +226,7 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 	if policy.Port != 0 && policy.Port != -1 {
 		dstPort = uint16(policy.Port)
 	}
-	target := net.JoinHostPort(dstHost, strconv.FormatUint(uint64(dstPort), 10))
+	target := net.JoinHostPort(dstHost, formatUint(dstPort))
 
 	replyFirst := policy.ReplyFirst == BoolTrue
 	if !replyFirst {
