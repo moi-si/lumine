@@ -14,6 +14,12 @@ import (
 	log "github.com/moi-si/mylog"
 )
 
+const (
+	tlsAlertLevelFatal      byte = 2
+	tlsAlertAccessDenied    byte = 70
+	tlsAlertProtocolVersion byte = 49
+)
+
 func handleTunnel(
 	p Policy, replyFirst bool, dstConn, cliConn net.Conn, logger *log.Logger,
 	target, originHost string) {
@@ -238,22 +244,16 @@ func handleTLS(logger *log.Logger, recordLen int,
 		return
 	}
 	if p.Mode == ModeTLSAlert {
-		// fatal access_denied
-		if err = sendTLSAlert(cliConn, prtVer, 49, 2); err != nil {
-			logger.Debug("Failed to send TLS alert:", err)
-		}
+		sendTLSAlert(logger, cliConn, prtVer, tlsAlertAccessDenied, tlsAlertLevelFatal)
 		return
 	}
 	if p.TLS13Only == BoolTrue && !hasKeyShare {
-		logger.Info("Connection blocked: no key_share in ClientHello")
-		// fatal protocol_version
-		if err = sendTLSAlert(cliConn, prtVer, 70, 2); err != nil {
-			logger.Debug("Failed to send tls alert:", err)
-		}
+		logger.Info("Connection blocked: key_share missing from ClientHello")
+		sendTLSAlert(logger, cliConn, prtVer, tlsAlertProtocolVersion, tlsAlertLevelFatal)
 		return
 	}
 	if sniPos <= 0 || sniLen <= 0 {
-		logger.Info("No SNI in ClientHello")
+		logger.Info("SNI not found")
 		if replyFirst {
 			dstConn, err = net.DialTimeout("tcp", target, p.ConnectTimeout)
 			if err != nil {
@@ -281,10 +281,8 @@ func handleTLS(logger *log.Logger, recordLen int,
 				logger.Info("Connection blocked")
 				return
 			case ModeTLSAlert:
-				if err = sendTLSAlert(cliConn, prtVer, 49, 2); err != nil {
-					logger.Error("Send TLS alert:", err)
-				}
-				logger.Info("Connection blocked by sending TLS alert")
+				logger.Info("Connection blocked (TLS alert)")
+				sendTLSAlert(logger, cliConn, prtVer, tlsAlertAccessDenied, tlsAlertLevelFatal)
 				return
 			}
 		}
@@ -356,4 +354,11 @@ func handleTLS(logger *log.Logger, recordLen int,
 		}
 	}
 	return dstConn, true
+}
+
+func sendTLSAlert(logger *log.Logger, conn net.Conn, prtVer []byte, desc byte, level byte) {
+	_, err := conn.Write([]byte{0x15, prtVer[0], prtVer[1], 0x00, 0x02, level, desc})
+	if err != nil {
+		logger.Error("Send TLS alert:", err)
+	}
 }

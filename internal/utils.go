@@ -149,11 +149,6 @@ func parseClientHello(data []byte) (prtVer []byte, sniPos int, sniLen int, hasKe
 	return prtVer, sniPos, sniLen, hasKeyShare, nil
 }
 
-func sendTLSAlert(conn net.Conn, prtVer []byte, desc byte, level byte) error {
-	_, err := conn.Write([]byte{0x15, prtVer[0], prtVer[1], 0x00, 0x02, level, desc})
-	return err
-}
-
 func expandPattern(s string) []string {
 	left := -1
 	for i, ch := range s {
