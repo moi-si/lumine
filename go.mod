@@ -4,8 +4,6 @@ go 1.24.5
 
 require golang.org/x/sys v0.41.0
 
-require github.com/google/uuid v1.6.0
-
 require (
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/elastic/go-freelru v0.16.0

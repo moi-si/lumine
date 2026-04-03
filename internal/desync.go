@@ -1,3 +1,5 @@
+//go:build windows || linux
+
 package lumine
 
 import (
@@ -15,6 +17,12 @@ var (
 	ttlCacheTTL     time.Duration
 	ttlSingleflight *singleflight.Group
 )
+
+type rule struct {
+	threshold int  // a
+	typ       byte // '-' or '='
+	val       int  // b
+}
 
 func parseTTLRules(conf string) ([]rule, error) {
 	if len(conf) == 0 {

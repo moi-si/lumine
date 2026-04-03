@@ -10,15 +10,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/google/uuid"
 	"golang.org/x/sys/windows"
 )
 
 const minInterval = 100 * time.Millisecond
 
 func detectMinimalReachableTTL(
-	addr string,
-	ipv6 bool,
+	addr string, ipv6 bool,
 	maxTTL, attempts int,
 	dialTimeout time.Duration,
 ) (int, error) {
@@ -86,7 +84,7 @@ func sendWithNoise(
 ) error {
 	toWrite := uint32(fakeLen)
 
-	tmpFile, err := os.CreateTemp("", uuid.New().String())
+	tmpFile, err := os.CreateTemp("", "")
 	if err != nil {
 		return wrap("create temp file", err)
 	}

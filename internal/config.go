@@ -55,12 +55,6 @@ var (
 	ipv6Matcher   *addrtrie.IPv6Trie[*Policy]
 )
 
-type rule struct {
-	threshold int  // a
-	typ       byte // '-' or '='
-	val       int  // b
-}
-
 func LoadConfig(filePath string) (string, string, error) {
 	file, err := os.Open(filePath)
 	if err != nil {

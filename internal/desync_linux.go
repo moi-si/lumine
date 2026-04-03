@@ -15,8 +15,7 @@ import (
 const minInterval = 100 * time.Millisecond
 
 func detectMinimalReachableTTL(
-	addr string,
-	ipv6 bool,
+	addr string, ipv6 bool,
 	maxTTL, attempts int,
 	dialTimeout time.Duration,
 ) (int, error) {

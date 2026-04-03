@@ -6,11 +6,25 @@ import (
 	"errors"
 	"net"
 	"time"
+
+	"github.com/elastic/go-freelru"
+	"golang.org/x/sync/singleflight"
 )
 
 var errTTLDNotSupported = errors.New("`ttl-d` is not supported on current system")
 
-func minReachableTTL(string, bool, int, int, time.Duration) (int, bool, error) {
+var (
+	ttlCacheEnabled     bool
+	ttlCache            *freelru.ShardedLRU[string, int]
+	ttlCacheTTL         time.Duration
+	ttlSingleflight     *singleflight.Group
+)
+
+func loadFakeTTLRules(string) error {
+	return errTTLDNotSupported
+}
+
+func getMinimalReachableTTL(string, bool, int, int, time.Duration) (int, bool, error) {
 	return -1, false, errTTLDNotSupported
 }
 
