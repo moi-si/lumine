@@ -99,7 +99,7 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 		return
 	}
 	if header[0] != 0x05 {
-		logger.Error("Expected socks version 5, but got", byteToStirng(header[0]))
+		logger.Error("Expected socks version 5, but got", byteToString(header[0]))
 		return
 	}
 	nMethods := int(header[1])
@@ -127,11 +127,11 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 		return
 	}
 	if header[0] != 0x05 {
-		logger.Error("Expected socks version 5, but got", byteToStirng(header[0]))
+		logger.Error("Expected socks version 5, but got", byteToString(header[0]))
 		return
 	}
 	if header[1] != 0x01 {
-		logger.Error("Expected cmd CONNECT, but got", byteToStirng(header[1]))
+		logger.Error("Expected cmd CONNECT, but got", byteToString(header[1]))
 		sendReply(logger, cliConn, socks5RepCmdNotSupported)
 		return
 	}
@@ -206,7 +206,7 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 			return
 		}
 	default:
-		logger.Error("Invalid address type:", byteToStirng(header[3]))
+		logger.Error("Invalid address type:", byteToString(header[3]))
 		sendReply(logger, cliConn, socks5RepAtypNotSupported)
 		return
 	}

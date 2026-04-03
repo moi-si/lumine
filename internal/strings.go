@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-func byteToStirng(b byte) string {
+func byteToString(b byte) string {
 	return fmt.Sprintf("%x", b)
 }
 
