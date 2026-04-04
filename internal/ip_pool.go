@@ -48,7 +48,6 @@ type IPPool struct {
 	curValidIPs uint32
 
 	scanMu  sync.Mutex
-	ctx     context.Context
 	cancel  context.CancelFunc
 	sem     chan struct{}
 	counter uint32
@@ -180,15 +179,11 @@ func parseIPList(sources []string) ([]string, error) {
 
 func (p *IPPool) Init(logger *log.Logger) error {
 	p.logger = logger
-	p.ctx, p.cancel = context.WithCancel(context.Background())
-
 	p.scan()
-
 	p.mu.RLock()
 	valid := p.curValidIPs > 0
 	p.mu.RUnlock()
 	if !valid {
-		p.cancel()
 		return errors.New("no valid IP found after initial scan")
 	}
 
@@ -197,23 +192,13 @@ func (p *IPPool) Init(logger *log.Logger) error {
 }
 
 func (p *IPPool) scan() {
-	select {
-	case <-p.ctx.Done():
-		return
-	default:
-	}
-
 	p.scanMu.Lock()
 	defer p.scanMu.Unlock()
 
-	select {
-	case <-p.ctx.Done():
-		return
-	default:
-	}
-
 	results := make(chan ipResult, len(p.ips))
 	var wg sync.WaitGroup
+
+	p.logger.Info("Testing...")
 
 	for i := range p.ips {
 		wg.Add(1)
@@ -256,7 +241,7 @@ func (p *IPPool) testIP(index int) (time.Duration, float64) {
 
 	for range p.attempts {
 		start := time.Now()
-		conn, err := dialer.DialContext(p.ctx, "tcp", addrStr)
+		conn, err := dialer.Dial("tcp", addrStr)
 		if err != nil {
 			continue
 		}
@@ -329,12 +314,8 @@ func (p *IPPool) monitor() {
 	defer ticker.Stop()
 
 	for {
-		select {
-		case <-p.ctx.Done():
-			return
-		case <-ticker.C:
-			p.scan()
-		}
+		<-ticker.C
+		p.scan()
 	}
 }
 
@@ -361,17 +342,6 @@ func (p *IPPool) Get() string {
 	}
 	return p.ips[indexes[0]]
 }
-
-/*func (p *IPPool) Close() {
-	if p.cancel != nil {
-		p.cancel()
-		p.logger.Debug("IP pool closed")
-	}
-}
-
-func (p *IPPool) Reset() {
-	p.scan()
-}*/
 
 func getFromIPPool(tag string) (ipStr string, err error) {
 	if len(IPPools) == 0 {
