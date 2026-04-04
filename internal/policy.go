@@ -1,10 +1,12 @@
 package lumine
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"strings"
 	"time"
 
@@ -14,8 +16,6 @@ import (
 const (
 	unsetInt    = -1
 	unsetString = "-"
-	disableRedirectPrefix = "^"
-	ipPoolTagPrefix = "$"
 )
 
 type Mode uint8
@@ -417,6 +417,85 @@ func mergePolicies(policies ...*Policy) *Policy {
 	return &merged
 }
 
+const (
+	noRedirectPrefix = "^"
+	ipPoolTagPrefix  = "$"
+	resolvePrefix    = "?"
+)
+
+func genDoHDialFunc() (func(ctx context.Context, network, address string) (net.Conn, error), error) {
+	parsedURL, err := url.Parse(dnsAddr)
+	if err != nil {
+		return nil, wrap("invalid DoH URL", err)
+	}
+	host := parsedURL.Hostname()
+	dohConnPolicy = new(Policy)
+	if net.ParseIP(host) != nil {
+		var ipPolicy *Policy
+		host, ipPolicy, err = ipRedirect(nil, host)
+		if ipPolicy == nil {
+			dohConnPolicy = &defaultPolicy
+		} else {
+			dohConnPolicy = mergePolicies(ipPolicy, &defaultPolicy)
+		}
+		if err != nil {
+			return nil, wrap("ip redirect", err)
+		}
+	} else {
+		domainPolicy, foundDomainPolicy := domainMatcher.Find(host)
+		if foundDomainPolicy {
+			dohConnPolicy = mergePolicies(domainPolicy, &defaultPolicy)
+		} else {
+			dohConnPolicy = &defaultPolicy
+		}
+		disableRedirect := strings.HasPrefix(dohConnPolicy.Host, noRedirectPrefix)
+		policyHost := dohConnPolicy.Host
+		if disableRedirect {
+			policyHost = policyHost[1:]
+		}
+		var selectedHost string
+		if policyHost == "" || policyHost == unsetString {
+			var foundInHosts bool
+			selectedHost, foundInHosts = hostsMatcher.Find(host)
+			if foundInHosts {
+				disableRedirect = strings.HasPrefix(selectedHost, noRedirectPrefix)
+			}
+		} else {
+			selectedHost = policyHost
+		}
+		switch {
+		case selectedHost == "self":
+		case strings.HasPrefix(selectedHost, ipPoolTagPrefix):
+			if host, err = getFromIPPool(selectedHost[1:]); err != nil {
+				return nil, err
+			}
+		case strings.HasPrefix(selectedHost, resolvePrefix):
+		default:
+			host = selectedHost
+		}
+	}
+	switch dohConnPolicy.Mode {
+	case ModeBlock, ModeTLSAlert:
+		return nil, errors.New("the mode of the DoH cannot be `block`")
+	}
+	port := parsedURL.Port()
+	if port == "" {
+		port = "443"
+	}
+	if dohConnPolicy.Port != unsetInt {
+		port = formatInt(dohConnPolicy.Port)
+	}
+	addr := net.JoinHostPort(host, port)
+	dialer := net.Dialer{Timeout: dohConnPolicy.ConnectTimeout}
+	return func(ctx context.Context, network, _ string) (net.Conn, error) {
+		conn, err := dialer.DialContext(ctx, network, addr)
+		if err == nil {
+			return &interceptConn{Conn: conn}, nil
+		}
+		return nil, err
+	}, nil
+}
+
 func genPolicy(logger *log.Logger, originHost string) (dstHost string, p *Policy, failed bool, blocked bool) {
 	var err error
 
@@ -448,7 +527,7 @@ func genPolicy(logger *log.Logger, originHost string) (dstHost string, p *Policy
 		p = &defaultPolicy
 	}
 
-	disableRedirect := strings.HasPrefix(p.Host, disableRedirectPrefix)
+	disableRedirect := strings.HasPrefix(p.Host, noRedirectPrefix)
 	policyHost := p.Host
 	if disableRedirect {
 		policyHost = policyHost[1:]
@@ -473,7 +552,7 @@ func genPolicy(logger *log.Logger, originHost string) (dstHost string, p *Policy
 			}
 			logger.Info(logPrefix, originHost, "->", dstHost)
 		default:
-			disableRedirect = strings.HasPrefix(selectedHost, disableRedirectPrefix)
+			disableRedirect = strings.HasPrefix(selectedHost, noRedirectPrefix)
 		}
 	} else {
 		selectedHost = policyHost
@@ -496,7 +575,7 @@ func genPolicy(logger *log.Logger, originHost string) (dstHost string, p *Policy
 				return "", nil, true, false
 			}
 			logger.Info(logPrefix, selectedHost, "->", dstHost)
-		case strings.HasPrefix(selectedHost, "?"):
+		case strings.HasPrefix(selectedHost, resolvePrefix):
 			selectedHost = selectedHost[1:]
 			var cached bool
 			dstHost, cached, err = dnsResolve(selectedHost, p.DNSMode)

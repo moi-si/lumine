@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"runtime"
 	"strconv"
@@ -175,7 +174,7 @@ func LoadConfig(filePath string) (string, string, error) {
 	if strings.HasPrefix(dnsAddr, "https://") {
 		var dialContext func(ctx context.Context, network, addr string) (net.Conn, error)
 		if conf.DoHProxy == "" {
-			dialContext, err = genDialContext()
+			dialContext, err = genDoHDialFunc()
 			if err != nil {
 				return "", "", err
 			}
@@ -261,79 +260,6 @@ func (c *interceptConn) Write(b []byte) (n int, err error) {
 	}
 	n = len(b)
 	return
-}
-
-func genDialContext() (func(ctx context.Context, network, address string) (net.Conn, error), error) {
-	parsedURL, err := url.Parse(dnsAddr)
-	if err != nil {
-		return nil, wrap("invalid DoH URL", err)
-	}
-	host := parsedURL.Hostname()
-	dohConnPolicy = new(Policy)
-	if net.ParseIP(host) != nil {
-		var ipPolicy *Policy
-		host, ipPolicy, err = ipRedirect(nil, host)
-		if ipPolicy == nil {
-			dohConnPolicy = &defaultPolicy
-		} else {
-			dohConnPolicy = mergePolicies(ipPolicy, &defaultPolicy)
-		}
-		if err != nil {
-			return nil, wrap("ip redirect", err)
-		}
-	} else {
-		domainPolicy, foundDomainPolicy := domainMatcher.Find(host)
-		if foundDomainPolicy {
-			dohConnPolicy = mergePolicies(domainPolicy, &defaultPolicy)
-		} else {
-			dohConnPolicy = &defaultPolicy
-		}
-		disableRedirect := strings.HasPrefix(dohConnPolicy.Host, disableRedirectPrefix)
-		policyHost := dohConnPolicy.Host
-		if disableRedirect {
-			policyHost = policyHost[1:]
-		}
-		var selectedHost string
-		if policyHost == "" || policyHost == unsetString {
-			var foundInHosts bool
-			selectedHost, foundInHosts = hostsMatcher.Find(host)
-			if foundInHosts {
-				disableRedirect = strings.HasPrefix(selectedHost, disableRedirectPrefix)
-			}
-		} else {
-			selectedHost = policyHost
-		}
-		switch {
-		case selectedHost == "self":
-		case strings.HasPrefix(selectedHost, ipPoolTagPrefix):
-			if host, err = getFromIPPool(selectedHost[1:]); err != nil {
-				return nil, err
-			}
-		case strings.HasPrefix(selectedHost, "?"):
-		default:
-			host = selectedHost
-		}
-	}
-	switch dohConnPolicy.Mode {
-	case ModeBlock, ModeTLSAlert:
-		return nil, errors.New("the mode of the DoH cannot be `block`")
-	}
-	port := parsedURL.Port()
-	if port == "" {
-		port = "443"
-	}
-	if dohConnPolicy.Port != unsetInt {
-		port = formatInt(dohConnPolicy.Port)
-	}
-	addr := net.JoinHostPort(host, port)
-	dialer := net.Dialer{Timeout: dohConnPolicy.ConnectTimeout}
-	return func(ctx context.Context, network, _ string) (net.Conn, error) {
-		conn, err := dialer.DialContext(ctx, network, addr)
-		if err == nil {
-			return &interceptConn{Conn: conn}, nil
-		}
-		return nil, err
-	}, nil
 }
 
 func hashStringXXHASH(s string) uint32 {
