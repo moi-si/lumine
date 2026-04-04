@@ -19,7 +19,6 @@ import (
 )
 
 const (
-	tagPrefix             = "$"
 	defaultTimeout        = 1 * time.Second
 	defaultUpdateInterval = 30 * time.Minute
 	defaultMaxConcurrency = 100

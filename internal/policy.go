@@ -14,6 +14,8 @@ import (
 const (
 	unsetInt    = -1
 	unsetString = "-"
+	disableRedirectPrefix = "^"
+	ipPoolTagPrefix = "$"
 )
 
 type Mode uint8
@@ -446,7 +448,7 @@ func genPolicy(logger *log.Logger, originHost string) (dstHost string, p *Policy
 		p = &defaultPolicy
 	}
 
-	disableRedirect := strings.HasPrefix(p.Host, "^")
+	disableRedirect := strings.HasPrefix(p.Host, disableRedirectPrefix)
 	policyHost := p.Host
 	if disableRedirect {
 		policyHost = policyHost[1:]
@@ -470,6 +472,8 @@ func genPolicy(logger *log.Logger, originHost string) (dstHost string, p *Policy
 				logPrefix = "DNS:"
 			}
 			logger.Info(logPrefix, originHost, "->", dstHost)
+		default:
+			disableRedirect = strings.HasPrefix(selectedHost, disableRedirectPrefix)
 		}
 	} else {
 		selectedHost = policyHost
@@ -486,7 +490,7 @@ func genPolicy(logger *log.Logger, originHost string) (dstHost string, p *Policy
 		case selectedHost == "self":
 			dstHost = originHost
 			logger.Info(logPrefix, originHost)
-		case strings.HasPrefix(selectedHost, tagPrefix):
+		case strings.HasPrefix(selectedHost, ipPoolTagPrefix):
 			if dstHost, err = getFromIPPool(selectedHost[1:]); err != nil {
 				logger.Error(err)
 				return "", nil, true, false

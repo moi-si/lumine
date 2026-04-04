@@ -290,7 +290,7 @@ func ipRedirect(logger *log.Logger, ip string) (string, *Policy, error) {
 	}
 	var err error
 	mapTo := policy.MapTo
-	if strings.HasPrefix(mapTo, tagPrefix) {
+	if strings.HasPrefix(mapTo, ipPoolTagPrefix) {
 		if mapTo, err = getFromIPPool(mapTo[1:]); err != nil {
 			return "", nil, err
 		}

@@ -288,20 +288,24 @@ func genDialContext() (func(ctx context.Context, network, address string) (net.C
 		} else {
 			dohConnPolicy = &defaultPolicy
 		}
-		disableRedirect := strings.HasPrefix(dohConnPolicy.Host, "^")
+		disableRedirect := strings.HasPrefix(dohConnPolicy.Host, disableRedirectPrefix)
 		policyHost := dohConnPolicy.Host
 		if disableRedirect {
 			policyHost = policyHost[1:]
 		}
 		var selectedHost string
 		if policyHost == "" || policyHost == unsetString {
-			selectedHost, _ = hostsMatcher.Find(host)
+			var foundInHosts bool
+			selectedHost, foundInHosts = hostsMatcher.Find(host)
+			if foundInHosts {
+				disableRedirect = strings.HasPrefix(selectedHost, disableRedirectPrefix)
+			}
 		} else {
 			selectedHost = policyHost
 		}
 		switch {
 		case selectedHost == "self":
-		case strings.HasPrefix(selectedHost, tagPrefix):
+		case strings.HasPrefix(selectedHost, ipPoolTagPrefix):
 			if host, err = getFromIPPool(selectedHost[1:]); err != nil {
 				return nil, err
 			}
