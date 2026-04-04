@@ -22,6 +22,8 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
+const Version = "v0.7.9"
+
 type Config struct {
 	LogLevel          string             `json:"log_level"`
 	TransmitFileLimit int                `json:"transmit_file_limit"`

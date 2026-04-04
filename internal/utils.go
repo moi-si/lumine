@@ -316,10 +316,6 @@ func getTCPRawConn(conn net.Conn) (syscall.RawConn, error) {
 	return rawConn, nil
 }
 
-func isUseOfClosedConn(err error) bool {
-	return strings.Contains(err.Error(), "use of closed")
-}
-
 type wrappedError struct {
 	msg   string
 	cause error

@@ -48,7 +48,7 @@ func HTTPAccept(addr *string, serverAddr string) {
 	logger.Info("HTTP proxy server started at", listenAddr)
 
 	if err := srv.ListenAndServe(); err != nil {
-		logger.Error(err)
+		logger.Error("HTTP ListenAndServe:", err)
 		return
 	}
 }

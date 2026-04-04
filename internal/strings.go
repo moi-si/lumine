@@ -63,3 +63,7 @@ func formatInt[T int | int8 | int16 | int32 | int64](v T) string {
 func formatUint[T uint | uint8 | uint16 | uint32 | uint64](v T) string {
 	return strconv.FormatUint(uint64(v), 10)
 }
+
+func isUseOfClosedConn(err error) bool {
+	return strings.Contains(err.Error(), "use of closed")
+}

@@ -39,7 +39,7 @@ func SOCKS5Accept(addr *string, serverAddr string, done chan struct{}) {
 	logger := log.New(os.Stdout, "[S00000]", log.LstdFlags, logLevel)
 	ln, err := net.Listen("tcp", listenAddr)
 	if err != nil {
-		logger.Error(err)
+		logger.Error("Failed to start SOCKS5 server:", err)
 		return
 	}
 	if listenAddr[0] == ':' {
