@@ -49,7 +49,6 @@ var (
 	IPPools       map[string]*IPPool
 	sem           chan struct{}
 	dnsAddr       string
-	calcTTL       func(int) (int, error)
 	domainMatcher *addrtrie.DomainMatcher[*Policy]
 	ipMatcher     *addrtrie.IPv4Trie[*Policy]
 	ipv6Matcher   *addrtrie.IPv6Trie[*Policy]
@@ -125,12 +124,11 @@ func LoadConfig(filePath string) (string, string, error) {
 		if err != nil {
 			return "", "", wrap("init ttl cache", err)
 		}
-		ttlCacheEnabled = true
 		ttlCacheTTL = time.Duration(conf.TTLCacheTTL) * time.Second
 	}
 
 	if conf.FakeTTLRules != "" {
-		err = loadFakeTTLRules(conf.FakeTTLRules)
+		err = loadTTLRules(conf.FakeTTLRules)
 		if err != nil {
 			return "", "", wrap("load fake ttl rules", err)
 		}
@@ -217,8 +215,6 @@ func (c *interceptConn) Write(b []byte) (n int, err error) {
 	switch dohConnPolicy.Mode {
 	case ModeBlock, ModeTLSAlert:
 		return 0, errors.New("blocked by policy")
-	case ModeTTLD:
-		return 0, errors.ErrUnsupported
 	}
 	var sniPos, sniLen int
 	var hasKeyShare bool
@@ -235,16 +231,29 @@ func (c *interceptConn) Write(b []byte) (n int, err error) {
 	switch dohConnPolicy.Mode {
 	case ModeDirect, ModeRaw:
 		return c.Conn.Write(b)
+	case ModeTTLD:
+		raddr := c.RemoteAddr().String()
+		ipv6 := raddr[0] == '['
+		ttl, err := getFakeTTL(nil, dohConnPolicy, raddr, ipv6)
+		if err != nil {
+			return 0, wrap("get fake TTL", err)
+		}
+		if err = desyncSend(
+			c.Conn, ipv6, b,
+			sniPos, sniLen, ttl, dohConnPolicy.FakeSleep,
+		); err != nil {
+			return 0, wrap("ttl desync", err)
+		}
 	case ModeTLSRF:
-		err = sendRecords(c.Conn, b, sniPos, sniLen,
+		if err = sendRecords(c.Conn, b, sniPos, sniLen,
 			dohConnPolicy.NumRecords, dohConnPolicy.NumSegments,
 			dohConnPolicy.OOB == BoolTrue, dohConnPolicy.OOBEx == BoolTrue,
 			dohConnPolicy.ModMinorVer == BoolTrue,
-			dohConnPolicy.SendInterval)
+			dohConnPolicy.SendInterval); err != nil {
+			return 0, wrap("tls fragment", err)
+		}
 	}
-	if err == nil {
-		n = len(b)
-	}
+	n = len(b)
 	return
 }
 

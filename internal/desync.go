@@ -8,11 +8,12 @@ import (
 	"time"
 
 	"github.com/elastic/go-freelru"
+	log "github.com/moi-si/mylog"
 	"golang.org/x/sync/singleflight"
 )
 
 var (
-	ttlCacheEnabled bool
+	calcTTL         func(int) (int, error)
 	ttlCache        *freelru.ShardedLRU[string, int]
 	ttlCacheTTL     time.Duration
 	ttlSingleflight *singleflight.Group
@@ -82,7 +83,7 @@ func parseTTLRules(conf string) ([]rule, error) {
 	return rules, nil
 }
 
-func loadFakeTTLRules(conf string) error {
+func loadTTLRules(conf string) error {
 	rules, err := parseTTLRules(conf)
 	if err != nil {
 		return err
@@ -117,7 +118,7 @@ func loadFakeTTLRules(conf string) error {
 }
 
 func getMinimalReachableTTL(addr string, ipv6 bool, maxTTL, attempts int, dialTimeout time.Duration) (int, bool, error) {
-	if ttlCacheEnabled {
+	if ttlCache != nil {
 		if ttl, ok := ttlCache.Get(addr); ok {
 			return ttl, true, nil
 		}
@@ -137,4 +138,35 @@ func getMinimalReachableTTL(addr string, ipv6 bool, maxTTL, attempts int, dialTi
 		found, err = detectMinimalReachableTTL(addr, ipv6, maxTTL, attempts, dialTimeout)
 	}
 	return found, false, err
+}
+
+func getFakeTTL(logger *log.Logger, p *Policy, addr string, ipv6 bool) (ttl int, err error) {
+	if p.FakeTTL == 0 || p.FakeTTL == -1 {
+		var cached bool
+		ttl, cached, err = getMinimalReachableTTL(addr, ipv6, p.MaxTTL, p.Attempts, p.SingleTimeout)
+		if err != nil {
+			return -1, wrap("detect minimum reachable TTL", err)
+		}
+		if ttl == -1 {
+			return -1, errors.New("reachable TTL not found")
+		}
+		if calcTTL != nil {
+			ttl, err = calcTTL(ttl)
+			if err != nil {
+				return -1, wrap("calculate fake TTL", err)
+			}
+		} else {
+			ttl -= 1
+		}
+		if logger != nil {
+			if cached {
+				logger.Info("Fake TTL(cached):", formatInt(ttl))
+			} else {
+				logger.Info("Fake TTL:", ttl)
+			}
+		}
+	} else {
+		ttl = p.FakeTTL
+	}
+	return
 }

@@ -61,7 +61,7 @@ func httpHandler(w http.ResponseWriter, req *http.Request) {
 		connID = 0
 	}
 	logger := log.New(os.Stdout, fmt.Sprintf("[H%05x]", connID), log.LstdFlags, logLevel)
-	logger.Info(req.RemoteAddr, joinString("- \"", req.Method, req.RequestURI, req.Proto, "\""))
+	logger.Info(req.RemoteAddr, joinString("- \"", req.Method, " ", req.RequestURI, " ", req.Proto, "\""))
 
 	if req.Method == http.MethodConnect {
 		handleConnect(logger, w, req)

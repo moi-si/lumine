@@ -5,8 +5,10 @@
     "dns_addr": "https://987.cloudflare-gateway.com/dns-query",
     "socks5_for_doh": "",
     "udp_minsize": 4096,
+    "dns_singleflight": false,
     "dns_cache_ttl": 3600,
     "dns_cache_cap": 4096,
+    "ttl_singleflight": true,
     "ttl_cache_ttl": 86400,
     "ttl_cache_cap": 1024,
     "fake_ttl_rules": "0-1;3=3;5-1;8-2;13-3;20=18",
@@ -21,7 +23,7 @@
         "mod_minor_ver": true,
         "num_records": 4,
         "num_segs": 1,
-        "send_interval": "50ms",
+        "send_interval": "200ms",
         "oob": false,
         "oob_ex": false,
         "fake_ttl": 0,
@@ -55,6 +57,7 @@
         },
         "162.125.0.0/16": {
             "map_to": "162.125.1.0/24",
+            "mode": "tls-rf",
             "num_records": 1,
             "num_segs": 3
         }
@@ -82,7 +85,7 @@
             "host": "207.241.225.120"
         },
         "(gist.|)github.com": {
-            "host": "20.200.245.247"
+            "host": "20.207.73.82"
         },
         "api.github.com": {
             "host": "20.207.73.85"

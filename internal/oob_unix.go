@@ -10,9 +10,9 @@ import (
 
 func sendWithOOB(conn net.Conn, data []byte, oob byte) error {
 	// Tested on Android; did not work as expected.
-	rawConn, err := getRawConn(conn)
+	rawConn, err := getTCPRawConn(conn)
 	if err != nil {
-		return wrap("get raw conn", err)
+		return err
 	}
 
 	toSend := make([]byte, len(data)+1)
@@ -26,7 +26,7 @@ func sendWithOOB(conn net.Conn, data []byte, oob byte) error {
 			if innerErr == unix.EINTR {
 				continue
 			}
-			return innerErr != unix.EAGAIN
+			return true
 		}
 	})
 

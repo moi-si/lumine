@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	fmt.Println("moi-si/lumine v0.7.8")
+	fmt.Println("moi-si/lumine v0.7.9")
 	fmt.Println("")
 	flag.Usage = func() {
 		flag.PrintDefaults()

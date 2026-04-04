@@ -307,41 +307,15 @@ func handleTLS(logger *log.Logger, recordLen int,
 			}
 			logger.Info("ClientHello sent in fragments")
 		case ModeTTLD:
-			var ttl int
 			ipv6 := target[0] == '['
-			if p.FakeTTL == 0 || p.FakeTTL == -1 {
-				var cached bool
-				ttl, cached, err = getMinimalReachableTTL(target, ipv6, p.MaxTTL, p.Attempts, p.SingleTimeout)
-				if err != nil {
-					logger.Error("Detect minimum reachable ttl:", err)
-					return
-				}
-				if ttl == -1 {
-					logger.Error("Reachable TTL not found")
-					return
-				}
-				if calcTTL != nil {
-					ttl, err = calcTTL(ttl)
-					if err != nil {
-						logger.Error("Calculate fake TTL:", err)
-						return
-					}
-				} else {
-					ttl -= 1
-				}
-				if cached {
-					logger.Info("Fake TTL (cached):", strconv.Itoa(ttl))
-				} else {
-					logger.Info("Fake TTL:", ttl)
-				}
-			} else {
-				ttl = p.FakeTTL
+			ttl, err := getFakeTTL(logger, &p, target, ipv6)
+			if err != nil {
+				logger.Error("get fake TTL:", err)
 			}
-			err = desyncSend(
+			if err = desyncSend(
 				dstConn, ipv6, record,
 				sniPos, sniLen, ttl, p.FakeSleep,
-			)
-			if err != nil {
+			); err != nil {
 				logger.Error("TTL desync:", err)
 				return
 			}

@@ -7,9 +7,9 @@ import (
 )
 
 func sendWithOOB(conn net.Conn, data []byte, oob byte) error {
-	rawConn, err := getRawConn(conn)
+	rawConn, err := getTCPRawConn(conn)
 	if err != nil {
-		return wrap("get raw conn", err)
+		return err
 	}
 
 	var toSend []byte
@@ -36,7 +36,7 @@ func sendWithOOB(conn net.Conn, data []byte, oob byte) error {
 			nil,
 			nil,
 		)
-		return innerErr != windows.WSAEWOULDBLOCK
+		return true
 	})
 	if err != nil {
 		return wrap("raw write (wsasend)", err)

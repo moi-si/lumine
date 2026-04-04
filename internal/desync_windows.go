@@ -36,12 +36,7 @@ func detectMinimalReachableTTL(
 		dialer.Control = func(_, _ string, c syscall.RawConn) error {
 			var innerErr error
 			if err := c.Control(func(fd uintptr) {
-				innerErr = windows.SetsockoptInt(
-					windows.Handle(fd),
-					level,
-					opt,
-					mid,
-				)
+				innerErr = windows.SetsockoptInt(windows.Handle(fd), level, opt, mid)
 			}); err != nil {
 				return wrap("raw control", err)
 			}
@@ -58,7 +53,7 @@ func detectMinimalReachableTTL(
 				ok = true
 				break
 			}
-			if !errors.Is(err, os.ErrDeadlineExceeded) {
+			if netErr := err.(*net.OpError); !netErr.Timeout() {
 				return -1, wrap("dial "+formatInt(mid), err)
 			}
 		}
@@ -70,7 +65,7 @@ func detectMinimalReachableTTL(
 		}
 	}
 
-	if ttlCacheEnabled && found != -1 {
+	if ttlCache != nil && found != -1 {
 		ttlCache.AddWithLifetime(addr, found, ttlCacheTTL)
 	}
 	return found, nil
@@ -79,10 +74,12 @@ func detectMinimalReachableTTL(
 func sendWithNoise(
 	sockHandle windows.Handle,
 	fakeData, realData []byte,
-	fakeLen, fakeTTL, defaultTTL, level, opt int,
+	fakeTTL, defaultTTL, level, opt int,
 	fakeSleep time.Duration,
 ) error {
-	toWrite := uint32(fakeLen)
+	if len(fakeData) != len(realData) {
+		return errors.New("the length of realData must equal to that of fakeData")
+	}
 
 	tmpFile, err := os.CreateTemp("", "")
 	if err != nil {
@@ -95,13 +92,9 @@ func sendWithNoise(
 		return wrap("seek start", err)
 	}
 
-	_, err = tmpFile.Write(fakeData[:fakeLen])
+	_, err = tmpFile.Write(fakeData)
 	if err != nil {
 		return wrap("write fake data", err)
-	}
-
-	if err = tmpFile.Truncate(int64(fakeLen)); err != nil {
-		return wrap("truncate fake", err)
 	}
 
 	if err = tmpFile.Sync(); err != nil {
@@ -128,16 +121,28 @@ func sendWithNoise(
 		defer func() { <-sem }()
 	}
 
-	if err = windows.TransmitFile(
-		sockHandle,
-		windows.Handle(tmpFile.Fd()),
-		toWrite,
-		toWrite,
-		&ov,
-		nil,
-		windows.TF_USE_KERNEL_APC|windows.TF_WRITE_BEHIND,
-	); err != nil && err != windows.ERROR_IO_PENDING {
-		return wrap("TransmitFile: unexpected error", err)
+	rawConn, err := tmpFile.SyscallConn()
+	if err != nil {
+		return wrap("get raw conn", err)
+	}
+	var transmitFileErr error
+	rawCtrlErr := rawConn.Control(func(fd uintptr) {
+		toWrite := uint32(len(fakeData))
+		transmitFileErr = windows.TransmitFile(
+			sockHandle,
+			windows.Handle(fd),
+			toWrite,
+			toWrite,
+			&ov,
+			nil,
+			windows.TF_USE_KERNEL_APC|windows.TF_WRITE_BEHIND,
+		)
+	})
+	if rawCtrlErr != nil {
+		return wrap("raw control", rawCtrlErr)
+	}
+	if transmitFileErr != nil && transmitFileErr != windows.ERROR_IO_PENDING {
+		return wrap("call TransmitFile", err)
 	}
 
 	time.Sleep(fakeSleep)
@@ -146,13 +151,9 @@ func sendWithNoise(
 		return wrap("seek start", err)
 	}
 
-	_, err = tmpFile.Write(realData[:fakeLen])
+	_, err = tmpFile.Write(realData)
 	if err != nil {
 		return wrap("write real data", err)
-	}
-
-	if err = tmpFile.Truncate(int64(fakeLen)); err != nil {
-		return wrap("truncate real", err)
 	}
 
 	if err = tmpFile.Sync(); err != nil {
@@ -175,13 +176,13 @@ func sendWithNoise(
 	case windows.WAIT_OBJECT_0:
 		return nil
 	case uint32(windows.WAIT_TIMEOUT):
-		return errors.New("TransmitFile timeout (5s)")
+		return errors.New("TransmitFile: timeout (5s)")
 	case windows.WAIT_ABANDONED:
-		return errors.New("TransmitFile failed: WAIT_ABANDONED")
+		return errors.New("TransmitFile: WAIT_ABANDONED")
 	case windows.WAIT_FAILED:
-		return wrap("TransmitFile failed: WAIT_FAILED", windows.GetLastError())
+		return wrap("TransmitFile: WAIT_FAILED", windows.GetLastError())
 	default:
-		return errors.New("TransmitFile failed: unexpected event: " + formatUint(event))
+		return errors.New("TransmitFile: unexpected event: " + formatUint(event))
 	}
 }
 
@@ -189,10 +190,11 @@ func desyncSend(
 	conn net.Conn, ipv6 bool,
 	firstPacket []byte, sniPos, sniLen, fakeTTL int, fakeSleep time.Duration,
 ) error {
-	rawConn, err := getRawConn(conn)
+	rawConn, err := getTCPRawConn(conn)
 	if err != nil {
-		return wrap("get raw conn", err)
+		return err
 	}
+
 	var sockHandle windows.Handle
 	controlErr := rawConn.Control(func(fd uintptr) {
 		sockHandle = windows.Handle(fd)
@@ -229,11 +231,8 @@ func desyncSend(
 
 	if err = sendWithNoise(
 		sockHandle,
-		fakeData,
-		firstPacket[:cut],
-		cut,
-		fakeTTL,
-		defaultTTL,
+		fakeData, firstPacket[:cut],
+		fakeTTL, defaultTTL,
 		level, opt,
 		fakeSleep,
 	); err != nil {

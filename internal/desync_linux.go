@@ -3,9 +3,7 @@
 package lumine
 
 import (
-	"errors"
 	"net"
-	"os"
 	"syscall"
 	"time"
 
@@ -35,12 +33,7 @@ func detectMinimalReachableTTL(
 		dialer.Control = func(_, _ string, c syscall.RawConn) error {
 			var innerErr error
 			if err := c.Control(func(fd uintptr) {
-				innerErr = unix.SetsockoptInt(
-					int(fd),
-					level,
-					opt,
-					mid,
-				)
+				innerErr = unix.SetsockoptInt(int(fd), level, opt, mid)
 			}); err != nil {
 				return wrap("raw control", err)
 			}
@@ -57,7 +50,7 @@ func detectMinimalReachableTTL(
 				ok = true
 				break
 			}
-			if !errors.Is(err, os.ErrDeadlineExceeded) {
+			if netErr := err.(*net.OpError); !netErr.Timeout() {
 				return -1, wrap("dial "+formatInt(mid), err)
 			}
 		}
@@ -69,7 +62,7 @@ func detectMinimalReachableTTL(
 		}
 	}
 
-	if ttlCacheEnabled && found != -1 {
+	if ttlCache != nil && found != -1 {
 		ttlCache.AddWithLifetime(addr, found, ttlCacheTTL)
 	}
 	return found, nil
@@ -113,27 +106,25 @@ func sendWithNoise(
 		return wrap("vmsplice", err)
 	}
 
-	errChan, innerErrChan := make(chan error), make(chan error)
+	var rawWriteErr, innerErr error
+	done := make(chan struct{})
 	go func() {
-		var innerErr error
-		err := rawConn.Write(func(fd uintptr) (done bool) {
-			for {
-				_, innerErr = unix.Splice(
-					pipeR,
-					nil,
-					int(fd),
-					nil,
-					len(fakeData),
-					unix.SPLICE_F_NONBLOCK,
-				)
-				if innerErr == unix.EINTR {
-					continue
+		toWrite := len(fakeData)
+		rawWriteErr = rawConn.Write(func(fd uintptr) (done bool) {
+			for toWrite > 0 {
+				var n int64
+				n, innerErr = unix.Splice(pipeR, nil, int(fd), nil, toWrite, unix.SPLICE_F_NONBLOCK)
+				if innerErr != nil {
+					if innerErr == unix.EINTR {
+						continue
+					}
+					return innerErr != unix.EAGAIN
 				}
-				return innerErr != unix.EAGAIN
+				toWrite -= int(n)
 			}
+			return true
 		})
-		errChan <- err
-		innerErrChan <- innerErr
+		close(done)
 	}()
 
 	time.Sleep(fakeSleep)
@@ -144,10 +135,9 @@ func sendWithNoise(
 	if err != nil {
 		return wrap("set default TTL", err)
 	}
-	err = <-errChan
-	innerErr := <-innerErrChan
-	if err != nil {
-		return wrap("raw write (splice)", err)
+	<-done
+	if rawWriteErr != nil {
+		return wrap("raw write (splice)", rawWriteErr)
 	}
 	if innerErr != nil {
 		return wrap("splice", innerErr)
@@ -159,16 +149,15 @@ func desyncSend(
 	conn net.Conn, ipv6 bool,
 	firstPacket []byte, sniPos, sniLen, fakeTTL int, fakeSleep time.Duration,
 ) error {
-	rawConn, err := getRawConn(conn)
+	rawConn, err := getTCPRawConn(conn)
 	if err != nil {
-		return wrap("get raw conn", err)
+		return err
 	}
 
 	var fd int
-	err = rawConn.Control(func(fileDesc uintptr) {
+	if err = rawConn.Control(func(fileDesc uintptr) {
 		fd = int(fileDesc)
-	})
-	if err != nil {
+	}); err != nil {
 		return wrap("raw control", err)
 	}
 

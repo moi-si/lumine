@@ -308,9 +308,12 @@ func ipRedirect(logger *log.Logger, ip string) (string, *Policy, error) {
 	return mapTo, policy, nil
 }
 
-func getRawConn(conn net.Conn) (syscall.RawConn, error) {
-	tcpConn := conn.(*net.TCPConn)
-	return tcpConn.SyscallConn()
+func getTCPRawConn(conn net.Conn) (syscall.RawConn, error) {
+	rawConn, err := conn.(*net.TCPConn).SyscallConn()
+	if err != nil {
+		return nil, wrap("get raw conn", err)
+	}
+	return rawConn, nil
 }
 
 func isUseOfClosedConn(err error) bool {
