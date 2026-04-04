@@ -10,6 +10,15 @@ func byteToString(b byte) string {
 	return fmt.Sprintf("%x", b)
 }
 
+func bytesHasPrefix(b []byte, prefixes ...string) bool {
+	for _, prefix := range prefixes {
+		if string(b[:len(prefix)]) == prefix {
+			return true
+		}
+	}
+	return false
+}
+
 func joinString(values ...any) string {
 	var builder strings.Builder
 	for _, v := range values {

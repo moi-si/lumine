@@ -285,17 +285,17 @@ func ipRedirect(logger *log.Logger, ip string) (string, *Policy, error) {
 	if !exists {
 		return ip, nil, nil
 	}
-	if policy.MapTo == nil || *policy.MapTo == "" {
+	if policy.MapTo == "" || policy.MapTo == unsetString {
 		return ip, policy, nil
 	}
 	var err error
-	mapTo := *policy.MapTo
+	mapTo := policy.MapTo
 	if strings.HasPrefix(mapTo, tagPrefix) {
 		if mapTo, err = getFromIPPool(mapTo[1:]); err != nil {
 			return "", nil, err
 		}
-	} else if strings.LastIndexByte(*policy.MapTo, '/') != -1 {
-		mapTo, err = transformIP(ip, *policy.MapTo)
+	} else if strings.LastIndexByte(policy.MapTo, '/') != -1 {
+		mapTo, err = transformIP(ip, policy.MapTo)
 		if err != nil {
 			return "", nil, err
 		}
@@ -338,13 +338,4 @@ func wrap(msg string, cause error) error {
 		msg:   msg,
 		cause: cause,
 	}
-}
-
-func bytesHasPrefix(b []byte, prefixes ...string) bool {
-	for _, prefix := range prefixes {
-		if string(b[:len(prefix)]) == prefix {
-			return true
-		}
-	}
-	return false
 }

@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"strings"
 	"sync/atomic"
 	"time"
 
@@ -185,25 +184,15 @@ func forwardHTTPRequest(logger *log.Logger, w http.ResponseWriter, originReq *ht
 		}
 	}
 
-	var p Policy
-	if domainPolicy, exists := domainMatcher.Find(originHost); exists {
-		p = mergePolicies(domainPolicy, &defaultPolicy)
-	} else {
-		p = defaultPolicy
+	dstHost, p, failed, blocked := genPolicy(logger, originHost)
+	if failed {
+		http.Error(w, status500, http.StatusInternalServerError)
+		return
 	}
-
-	if p.Host != nil && *p.Host != "" {
-		if (*p.Host)[0] != '^' {
-			_, ipPolicy, err := ipRedirect(logger, *p.Host)
-			if err != nil {
-				logger.Error("IP redirect:", err)
-				http.Error(w, status500, http.StatusInternalServerError)
-				return
-			}
-			if ipPolicy != nil {
-				p = mergePolicies(&p, ipPolicy, &defaultPolicy)
-			}
-		}
+	if blocked {
+		logger.Info("Connection blocked")
+		http.Error(w, status403, http.StatusForbidden)
+		return
 	}
 
 	if p.HttpStatus != 0 && p.HttpStatus != -1 {
@@ -220,56 +209,9 @@ func forwardHTTPRequest(logger *log.Logger, w http.ResponseWriter, originReq *ht
 		return
 	}
 
-	if p.Mode == ModeBlock {
-		logger.Info("Connection blocked")
-		http.Error(w, status403, http.StatusForbidden)
-		return
-	}
-
-	dstHost := originHost
 	dstPort := port
-
-	if p.Host != nil && *p.Host != "" {
-		if *p.Host == "self" {
-			dstHost = originHost
-			logger.Info("Host:", dstHost)
-		} else if strings.HasPrefix(*p.Host, "^") {
-			dstHost = (*p.Host)[1:]
-		} else {
-			dstHost = *p.Host
-			if strings.HasPrefix(dstHost, tagPrefix) {
-				if dstHost, err = getFromIPPool(dstHost[1:]); err != nil {
-					logger.Error(err)
-					http.Error(w, status500, http.StatusInternalServerError)
-					return
-				}
-				logger.Info("Host:", *p.Host, "->", dstHost)
-			} else {
-				logger.Info("Host:", *p.Host)
-			}
-		}
-	}
-
 	if p.Port != 0 && p.Port != -1 {
 		dstPort = formatInt(p.Port)
-	}
-
-	disableRedirect := p.Host != nil && strings.HasPrefix(*p.Host, "^")
-	if !disableRedirect {
-		var ipPolicy *Policy
-		dstHost, ipPolicy, err = ipRedirect(logger, dstHost)
-		if err != nil {
-			logger.Error("IP redirect:", err)
-			http.Error(w, status500, http.StatusInternalServerError)
-			return
-		}
-		if ipPolicy != nil {
-			p = mergePolicies(&p, ipPolicy, &defaultPolicy)
-			if p.Mode == ModeBlock {
-				http.Error(w, status403, http.StatusForbidden)
-				return
-			}
-		}
 	}
 
 	outReq := originReq.Clone(context.Background())

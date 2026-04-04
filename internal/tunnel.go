@@ -20,7 +20,7 @@ const (
 )
 
 func handleTunnel(
-	p Policy, replyFirst bool, dstConn, cliConn net.Conn, logger *log.Logger,
+	p *Policy, replyFirst bool, dstConn, cliConn net.Conn, logger *log.Logger,
 	target, originHost string) {
 	var (
 		err       error
@@ -82,7 +82,7 @@ func handleTunnel(
 			if err == nil {
 				var ok bool
 				if dstConn, ok = handleHTTP(logger, req,
-					replyFirst, originHost, target,
+					p, replyFirst, originHost, target,
 					cliConn, dstConn); !ok {
 					return
 				}
@@ -97,10 +97,10 @@ func handleTunnel(
 		// would NOT be included, leading to missing bytes. Using br ensures
 		// all data, both buffered and unbuffered, is consumed.
 		//
-		// Additionally, bufio.Reader preserves the underlying cliConn's
-		// WriteTo method, allowing io.Copy to use the optimized WriteTo
-		// mechanism for performance. This means io.Copy(dstConnTCP, cliReader)
-		// will be just as fast as io.Copy(cliConn, dstConn).
+		// Additionally, bufio.Reader preserves the underlying ReadFrom method,
+		// allowing io.Copy to use the optimized ReadFrom mechanism for
+		// performance. This means io.Copy(dstConnTCP, cliReader) will be just
+		// as fast as io.Copy(dstConnTCP, cliConn).
 		cliReader = br
 	}
 
@@ -135,8 +135,9 @@ func handleTunnel(
 	<-done
 }
 
-func handleHTTP(logger *log.Logger, req *http.Request,
-	replyFirst bool, originHost, target string,
+func handleHTTP(
+	logger *log.Logger, req *http.Request,
+	p *Policy, replyFirst bool, originHost, target string,
 	cliConn, dstConn net.Conn) (newConn net.Conn, ok bool) {
 	var err error
 	defer func() {
@@ -154,24 +155,6 @@ func handleHTTP(logger *log.Logger, req *http.Request,
 	}
 	logger.Info("host="+host, "method="+req.Method, "url="+req.URL.String())
 
-	var p Policy
-	if domainPolicy, exists := domainMatcher.Find(host); exists {
-		p = mergePolicies(domainPolicy, &defaultPolicy)
-	} else {
-		p = defaultPolicy
-	}
-	if p.Host != nil && *p.Host != "" {
-		if (*p.Host)[0] != '^' {
-			_, ipPolicy, err := ipRedirect(logger, *p.Host)
-			if err != nil {
-				logger.Error("IP redirect:", err)
-				return
-			}
-			if ipPolicy != nil {
-				p = mergePolicies(&p, ipPolicy, &defaultPolicy)
-			}
-		}
-	}
 	if p.HttpStatus == 0 || p.HttpStatus == -1 {
 		if replyFirst {
 			dstConn, err = net.DialTimeout("tcp", target, p.ConnectTimeout)
@@ -223,7 +206,7 @@ func handleHTTP(logger *log.Logger, req *http.Request,
 }
 
 func handleTLS(logger *log.Logger, recordLen int,
-	p Policy, replyFirst bool, originHost, target string,
+	p *Policy, replyFirst bool, originHost, target string,
 	br *bufio.Reader, cliConn, dstConn net.Conn) (newConn net.Conn, ok bool) {
 	record := make([]byte, recordLen)
 	if n, err := br.Read(record); err != nil {
@@ -265,11 +248,11 @@ func handleTLS(logger *log.Logger, recordLen int,
 		sniStr := string(record[sniPos : sniPos+sniLen])
 		if originHost != sniStr {
 			logger.Info("Server name:", sniStr)
-			var sniPolicy Policy
+			var sniPolicy *Policy
 			if domainPolicy, exists := domainMatcher.Find(sniStr); exists {
 				sniPolicy = mergePolicies(domainPolicy, &defaultPolicy)
 			} else {
-				sniPolicy = defaultPolicy
+				sniPolicy = &defaultPolicy
 			}
 			switch sniPolicy.Mode {
 			case ModeBlock:
@@ -308,7 +291,7 @@ func handleTLS(logger *log.Logger, recordLen int,
 			logger.Info("ClientHello sent in fragments")
 		case ModeTTLD:
 			ipv6 := target[0] == '['
-			ttl, err := getFakeTTL(logger, &p, target, ipv6)
+			ttl, err := getFakeTTL(logger, p, target, ipv6)
 			if err != nil {
 				logger.Error("get fake TTL:", err)
 			}

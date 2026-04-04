@@ -5,14 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"strconv"
 	"strings"
 	"time"
 
 	log "github.com/moi-si/mylog"
 )
 
-const unsetInt = -1
+const (
+	unsetInt    = -1
+	unsetString = "-"
+)
 
 type Mode uint8
 
@@ -96,8 +98,8 @@ type Policy struct {
 	ReplyFirst     BoolWithDefault
 	DNSMode        DNSMode
 	ConnectTimeout time.Duration
-	Host           *string
-	MapTo          *string
+	Host           string
+	MapTo          string
 	Port           int
 	HttpStatus     int
 	TLS13Only      BoolWithDefault
@@ -152,16 +154,20 @@ func (p *Policy) UnmarshalJSON(data []byte) error {
 	p.OOBEx = tmp.OOBEx
 	p.ModMinorVer = tmp.ModMinorVer
 
-	if tmp.Host != nil && *tmp.Host == "" {
-		return errors.New("host cannot be an empty string")
+	if tmp.Host == nil {
+		p.Host = unsetString
+	} else if *tmp.Host == unsetString {
+		return errors.New("host cannot be `-`")
 	} else {
-		p.Host = tmp.Host
+		p.Host = *tmp.Host
 	}
 
-	if tmp.MapTo != nil && *tmp.MapTo == "" {
-		return errors.New("map_to cannot be an empty string")
+	if tmp.MapTo == nil {
+		p.MapTo = unsetString
+	} else if *tmp.MapTo == unsetString {
+		return errors.New("map_to cannot be `-`")
 	} else {
-		p.MapTo = tmp.MapTo
+		p.MapTo = *tmp.MapTo
 	}
 
 	if tmp.Port == nil {
@@ -278,7 +284,7 @@ func (p Policy) String() string {
 	if p.Port != unsetInt && p.Port != 0 {
 		fields = append(fields, ":"+formatInt(p.Port))
 	}
-	if p.Host == nil || *p.Host == "" {
+	if p.DNSMode != DNSModeUnknown && (p.Host == "" || p.Host == unsetString) {
 		fields = append(fields, p.DNSMode.String())
 	}
 	if p.HttpStatus > 0 {
@@ -294,10 +300,10 @@ func (p Policy) String() string {
 			fields = append(fields, "mod_minor_ver")
 		}
 		if p.NumRecords != unsetInt && p.NumRecords != 1 {
-			fields = append(fields, strconv.Itoa(p.NumRecords)+" records")
+			fields = append(fields, formatInt(p.NumRecords)+" records")
 		}
 		if p.NumSegments != unsetInt && p.NumSegments != 1 {
-			fields = append(fields, strconv.Itoa(p.NumSegments)+" segments")
+			fields = append(fields, formatInt(p.NumSegments)+" segments")
 		}
 		if p.SendInterval > 0 {
 			fields = append(fields, "send_interval="+p.SendInterval.String())
@@ -312,24 +318,26 @@ func (p Policy) String() string {
 		if p.FakeTTL == 0 || p.FakeTTL == unsetInt {
 			fields = append(fields, "auto_fake_ttl")
 			if p.Attempts != 0 {
-				fields = append(fields, "attempts="+strconv.Itoa(p.Attempts))
+				fields = append(fields, "attempts="+formatInt(p.Attempts))
 			}
 			if p.MaxTTL != 0 {
-				fields = append(fields, "max_ttl="+strconv.Itoa(p.MaxTTL))
+				fields = append(fields, "max_ttl="+formatInt(p.MaxTTL))
 			}
 			if p.SingleTimeout != 0 {
 				fields = append(fields, "single_timeout="+p.SingleTimeout.String())
 			}
 		} else {
-			fields = append(fields, fmt.Sprintf("fake_ttl=%d", p.FakeTTL))
+			fields = append(fields, "fake_ttl="+formatInt(p.FakeTTL))
 		}
 		fields = append(fields, "fake_sleep="+p.FakeSleep.String())
 	}
 	return strings.Join(fields, ", ")
 }
 
-func mergePolicies(policies ...*Policy) Policy {
+func mergePolicies(policies ...*Policy) *Policy {
 	merged := Policy{
+		Host:           unsetString,
+		MapTo:          unsetString,
 		HttpStatus:     unsetInt,
 		SendInterval:   unsetInt,
 		FakeTTL:        unsetInt,
@@ -343,10 +351,10 @@ func mergePolicies(policies ...*Policy) Policy {
 		if merged.ConnectTimeout == unsetInt && p.ConnectTimeout != unsetInt {
 			merged.ConnectTimeout = p.ConnectTimeout
 		}
-		if merged.Host == nil && p.Host != nil {
+		if merged.Host == unsetString && p.Host != unsetString {
 			merged.Host = p.Host
 		}
-		if merged.MapTo == nil && p.MapTo != nil {
+		if merged.MapTo == unsetString && p.MapTo != unsetString {
 			merged.MapTo = p.MapTo
 		}
 		if merged.Port == 0 && p.Port != 0 {
@@ -404,10 +412,10 @@ func mergePolicies(policies ...*Policy) Policy {
 	if merged.DNSMode == DNSModeUnknown {
 		merged.DNSMode = DNSModeDefault
 	}
-	return merged
+	return &merged
 }
 
-func genPolicy(logger *log.Logger, originHost string) (dstHost string, p Policy, failed bool, blocked bool) {
+func genPolicy(logger *log.Logger, originHost string) (dstHost string, p *Policy, failed bool, blocked bool) {
 	var err error
 
 	if net.ParseIP(originHost) != nil {
@@ -415,76 +423,114 @@ func genPolicy(logger *log.Logger, originHost string) (dstHost string, p Policy,
 		dstHost, ipPolicy, err = ipRedirect(logger, originHost)
 		if err != nil {
 			logger.Error("IP redirect:", err)
-			return "", Policy{}, true, false
+			return "", nil, true, false
 		}
 		if ipPolicy == nil {
-			p = defaultPolicy
+			p = &defaultPolicy
 		} else {
 			p = mergePolicies(ipPolicy, &defaultPolicy)
 		}
 		if p.Mode == ModeBlock {
-			return "", Policy{}, false, true
+			return "", nil, false, true
 		}
 		return
 	}
-	domainPolicy, found := domainMatcher.Find(originHost)
-	if found {
+
+	domainPolicy, foundDomainPolicy := domainMatcher.Find(originHost)
+	if foundDomainPolicy {
 		if domainPolicy.Mode == ModeBlock {
-			return "", Policy{}, false, true
+			return "", nil, false, true
 		}
 		p = mergePolicies(domainPolicy, &defaultPolicy)
 	} else {
-		p = defaultPolicy
+		p = &defaultPolicy
 	}
-	var cached bool
-	disableRedirect := p.Host != nil && strings.HasPrefix(*p.Host, "^")
-	if p.Host == nil || *p.Host == "" || *p.Host == "^" {
-		dstHost, cached, err = dnsResolve(originHost, p.DNSMode)
-		if err != nil {
-			logger.Error("Resolve", originHost+":", err)
-			return "", Policy{}, true, false
-		}
-		if cached {
-			logger.Info("DNS(cached):", originHost, "->", dstHost)
-		} else {
-			logger.Info("DNS:", originHost, "->", dstHost)
-		}
-	} else if *p.Host == "self" {
-		dstHost = originHost
-		logger.Info("Host:", dstHost)
-	} else {
-		if disableRedirect {
-			dstHost = (*p.Host)[1:]
-		} else {
-			dstHost = *p.Host
-		}
-		if strings.HasPrefix(dstHost, tagPrefix) {
-			if dstHost, err = getFromIPPool(dstHost[1:]); err != nil {
-				logger.Error(err)
-				return "", Policy{}, true, false
+
+	disableRedirect := strings.HasPrefix(p.Host, "^")
+	policyHost := p.Host
+	if disableRedirect {
+		policyHost = policyHost[1:]
+	}
+	var selectedHost string
+	var foundInHosts bool
+	if policyHost == "" || policyHost == unsetString {
+		selectedHost, foundInHosts = hostsMatcher.Find(originHost)
+		switch selectedHost {
+		case "", unsetString:
+			var cached bool
+			dstHost, cached, err = dnsResolve(originHost, p.DNSMode)
+			if err != nil {
+				logger.Error("Resolve", originHost+":", err)
+				return "", nil, true, false
 			}
-			logger.Info("Host:", *p.Host, "->", dstHost)
+			var logPrefix string
+			if cached {
+				logPrefix = "DNS (cached):"
+			} else {
+				logPrefix = "DNS:"
+			}
+			logger.Info(logPrefix, originHost, "->", dstHost)
+		}
+	} else {
+		selectedHost = policyHost
+	}
+
+	if dstHost == "" {
+		var logPrefix string
+		if foundInHosts {
+			logPrefix = "Host (from hosts):"
 		} else {
-			logger.Info("Host:", *p.Host)
+			logPrefix = "Host:"
+		}
+		switch {
+		case selectedHost == "self":
+			dstHost = originHost
+			logger.Info(logPrefix, originHost)
+		case strings.HasPrefix(selectedHost, tagPrefix):
+			if dstHost, err = getFromIPPool(selectedHost[1:]); err != nil {
+				logger.Error(err)
+				return "", nil, true, false
+			}
+			logger.Info(logPrefix, selectedHost, "->", dstHost)
+		case strings.HasPrefix(selectedHost, "?"):
+			selectedHost = selectedHost[1:]
+			var cached bool
+			dstHost, cached, err = dnsResolve(selectedHost, p.DNSMode)
+			if err != nil {
+				logger.Error("Resolve", selectedHost+":", err)
+				return "", nil, true, false
+			}
+			var logPrefix string
+			if cached {
+				logPrefix = "DNS (cached):"
+			} else {
+				logPrefix = "DNS:"
+			}
+			logger.Info(logPrefix, originHost, "->", selectedHost, "->", dstHost)
+		default:
+			dstHost = selectedHost
+			logger.Info(logPrefix, dstHost)
 		}
 	}
+
 	if !disableRedirect {
 		var ipPolicy *Policy
 		dstHost, ipPolicy, err = ipRedirect(logger, dstHost)
 		if err != nil {
 			logger.Info("IP redirect:", err)
-			return "", Policy{}, true, false
+			return "", nil, true, false
 		}
 		if ipPolicy != nil {
-			if found {
+			if foundDomainPolicy {
 				p = mergePolicies(domainPolicy, ipPolicy, &defaultPolicy)
 			} else {
 				p = mergePolicies(ipPolicy, &defaultPolicy)
 			}
 			if p.Mode == ModeBlock {
-				return "", Policy{}, false, true
+				return "", nil, false, true
 			}
 		}
 	}
+
 	return
 }

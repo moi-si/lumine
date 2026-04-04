@@ -38,6 +38,7 @@ type Config struct {
 	TTLCacheTTL       int                `json:"ttl_cache_ttl"`
 	TTLCacheCapacity  int                `json:"ttl_cache_cap"`
 	IPPools           map[string]*IPPool `json:"ip_pools"`
+	Hosts             map[string]string  `json:"hosts"`
 	DefaultPolicy     Policy             `json:"default_policy"`
 	DomainPolicies    map[string]Policy  `json:"domain_policies"`
 	IpPolicies        map[string]Policy  `json:"ip_policies"`
@@ -49,6 +50,7 @@ var (
 	IPPools       map[string]*IPPool
 	sem           chan struct{}
 	dnsAddr       string
+	hostsMatcher  *addrtrie.DomainMatcher[string]
 	domainMatcher *addrtrie.DomainMatcher[*Policy]
 	ipMatcher     *addrtrie.IPv4Trie[*Policy]
 	ipv6Matcher   *addrtrie.IPv6Trie[*Policy]
@@ -59,13 +61,11 @@ func LoadConfig(filePath string) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	defer file.Close()
-
-	decoder := json.NewDecoder(file)
 	var conf Config
-	if err = decoder.Decode(&conf); err != nil {
+	if err = json.NewDecoder(file).Decode(&conf); err != nil {
 		return "", "", err
 	}
+	file.Close()
 
 	if conf.LogLevel != "" {
 		switch strings.ToUpper(conf.LogLevel) {
@@ -80,12 +80,10 @@ func LoadConfig(filePath string) (string, string, error) {
 		}
 	}
 
-	defaultPolicy = conf.DefaultPolicy
 	if len(conf.IPPools) != 0 {
 		IPPools = conf.IPPools
 		for tag, pool := range IPPools {
 			logger := log.New(os.Stdout, "[P-"+tag+"]", log.LstdFlags, logLevel)
-			logger.Info("Testing...")
 			if err := pool.Init(logger); err != nil {
 				return "", "", wrap("init ip pool "+tag, err)
 			}
@@ -137,6 +135,17 @@ func LoadConfig(filePath string) (string, string, error) {
 		}
 	}
 
+	defaultPolicy = conf.DefaultPolicy
+
+	hostsMatcher = addrtrie.NewDomainMatcher[string]()
+	for patterns, host := range conf.Hosts {
+		for elem := range strings.SplitSeq(patterns, ";") {
+			for _, pattern := range expandPattern(elem) {
+				hostsMatcher.Add(pattern, host)
+			}
+		}
+	}
+
 	domainMatcher = addrtrie.NewDomainMatcher[*Policy]()
 	for patterns, policy := range conf.DomainPolicies {
 		for elem := range strings.SplitSeq(patterns, ";") {
@@ -183,10 +192,9 @@ func LoadConfig(filePath string) (string, string, error) {
 		dnsExchange = dohExchange
 	} else {
 		dnsExchange = do53Exchange
-		if conf.UDPSize <= 0 {
-			dnsClient = new(dns.Client)
-		} else {
-			dnsClient = &dns.Client{UDPSize: conf.UDPSize}
+		dnsClient = new(dns.Client)
+		if conf.UDPSize > 0 {
+			dnsClient.UDPSize = conf.UDPSize
 		}
 	}
 
@@ -212,10 +220,6 @@ func (c *interceptConn) Write(b []byte) (n int, err error) {
 		return c.Conn.Write(b)
 	}
 	c.handled = true
-	switch dohConnPolicy.Mode {
-	case ModeBlock, ModeTLSAlert:
-		return 0, errors.New("blocked by policy")
-	}
 	var sniPos, sniLen int
 	var hasKeyShare bool
 	_, sniPos, sniLen, hasKeyShare, err = parseClientHello(b)
@@ -270,60 +274,53 @@ func genDialContext() (func(ctx context.Context, network, address string) (net.C
 		if ipPolicy == nil {
 			dohConnPolicy = &defaultPolicy
 		} else {
-			p := mergePolicies(ipPolicy, &defaultPolicy)
-			dohConnPolicy = &p
+			dohConnPolicy = mergePolicies(ipPolicy, &defaultPolicy)
 		}
 		if err != nil {
 			return nil, wrap("ip redirect", err)
 		}
 	} else {
-		var disableRedirect bool
-		domainPolicy, found := domainMatcher.Find(host)
-		if found {
-			p := mergePolicies(domainPolicy, &defaultPolicy)
-			dohConnPolicy = &p
+		domainPolicy, foundDomainPolicy := domainMatcher.Find(host)
+		if foundDomainPolicy {
+			dohConnPolicy = mergePolicies(domainPolicy, &defaultPolicy)
 		} else {
 			dohConnPolicy = &defaultPolicy
 		}
-		if dohConnPolicy.Host != nil && *dohConnPolicy.Host != "" {
-			disableRedirect = (*dohConnPolicy.Host)[0] == '^'
-			if disableRedirect {
-				host = (*dohConnPolicy.Host)[1:]
-			} else {
-				host = *dohConnPolicy.Host
-			}
-			if strings.HasPrefix(host, tagPrefix) {
-				if host, err = getFromIPPool(host[1:]); err != nil {
-					return nil, err
-				}
-			}
-			if !disableRedirect {
-				var ipPolicy *Policy
-				host, ipPolicy, err = ipRedirect(nil, host)
-				if err != nil {
-					return nil, wrap("ip redirect", err)
-				}
-				if ipPolicy != nil {
-					var p Policy
-					if found {
-						p = mergePolicies(domainPolicy, ipPolicy, &defaultPolicy)
-					} else {
-						p = mergePolicies(ipPolicy, &defaultPolicy)
-					}
-					dohConnPolicy = &p
-				}
-			}
+		disableRedirect := strings.HasPrefix(dohConnPolicy.Host, "^")
+		policyHost := dohConnPolicy.Host
+		if disableRedirect {
+			policyHost = policyHost[1:]
 		}
+		var selectedHost string
+		if policyHost == "" || policyHost == unsetString {
+			selectedHost, _ = hostsMatcher.Find(host)
+		} else {
+			selectedHost = policyHost
+		}
+		switch {
+		case selectedHost == "self":
+		case strings.HasPrefix(selectedHost, tagPrefix):
+			if host, err = getFromIPPool(selectedHost[1:]); err != nil {
+				return nil, err
+			}
+		case strings.HasPrefix(selectedHost, "?"):
+		default:
+			host = selectedHost
+		}
+	}
+	switch dohConnPolicy.Mode {
+	case ModeBlock, ModeTLSAlert:
+		return nil, errors.New("the mode of the DoH cannot be `block`")
 	}
 	port := parsedURL.Port()
 	if port == "" {
 		port = "443"
 	}
 	if dohConnPolicy.Port != unsetInt {
-		port = strconv.FormatInt(int64(dohConnPolicy.Port), 10)
+		port = formatInt(dohConnPolicy.Port)
 	}
 	addr := net.JoinHostPort(host, port)
-	dialer := &net.Dialer{Timeout: dohConnPolicy.ConnectTimeout}
+	dialer := net.Dialer{Timeout: dohConnPolicy.ConnectTimeout}
 	return func(ctx context.Context, network, _ string) (net.Conn, error) {
 		conn, err := dialer.DialContext(ctx, network, addr)
 		if err == nil {

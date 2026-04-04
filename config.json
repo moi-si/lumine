@@ -13,6 +13,28 @@
     "ttl_cache_cap": 1024,
     "fake_ttl_rules": "0-1;3=3;5-1;8-2;13-3;20=18",
     "transmit_file_limit": 2,
+    "hosts": {
+        "onedrive.live.com": "13.107.139.11",
+        "skyapi.onedrive.live.com": "13.107.42.12",
+        "*vercel.app": "64.29.17.1",
+        "*(threads|cdninstagram|instagram).com": "57.144.74.192",
+        "*x.com;(video|abs|pbs).twimg.com;(i|s).pximg.net;(www.|embed.|)pixiv.net;api.booth.pm;*cloudflare(|-gateway|-dns).com;one.one.one.one;*(workers|pages).dev": "104.21.3.221",
+        "*(wikimedia|wikipedia|wiktionary|wikiversity|wikivoyage|wikisource|wikinews|wikidata|mediawiki|wikifunctions|wikibooks|wikiquote).org": "?text-lb.drmrs.wikimedia.org",
+        "(maps|upload).wikimedia.org": "?upload-lb.drmrs.wikimedia.org",
+        "dumps.wikimedia.org": "",
+        "(gist.|)github.com": "20.207.73.82",
+        "api.github.com": "20.207.73.85",
+        "codeload.github.com": "20.207.73.88",
+        "*(github.io|.githubusercontent.com);(page|doc)s.github.com": "146.75.48.133",
+        "objects-origin.githubusercontent.com": "140.82.113.22",
+        "(cn|purr|et).nytimes.com": "",
+        "*nyt(imes|).com": "",
+        "abs-0.twimg.com": "146.75.48.159",
+        "video.pscp.tv":  "146.75.34.164",
+       "*telegram.(org|me);t.me": "149.154.161.145",
+        "zws5(|-1).web.telegram.org": "149.154.170.200",
+        "platform.twitter.com": "146.75.120.157"
+    },
     "default_policy": {
         "reply_first": false,
         "dns_mode": "prefer_ipv4",
@@ -63,52 +85,6 @@
         }
     },
     "domain_policies": {
-        "*(threads|cdninstagram|instagram).com": {
-            "host": "57.144.74.192"
-        },
-        "*cloudflare(|-gateway|-dns).com;one.one.one.one;*(workers|pages).dev": {
-            "host": "104.21.3.221"
-        },
-        "(i|s).pximg.net;(www.|embed.|)pixiv.net;api.booth.pm": {
-            "host": "104.21.3.221"
-        },
-        "*(wikimedia|wikipedia|wiktionary|wikiversity|wikivoyage|wikisource|wikinews|wikidata|mediawiki|wikifunctions|wikibooks|wikiquote).org": {
-            "host": "185.15.58.224"
-        },
-        "upload.wikimedia.org": {
-            "host": "185.15.58.240"
-        },
-        "web.archive.org": {
-            "host": "207.241.237.3"
-        },
-        "(www.|)archive.org": {
-            "host": "207.241.225.120"
-        },
-        "(gist.|)github.com": {
-            "host": "20.207.73.82"
-        },
-        "api.github.com": {
-            "host": "20.207.73.85"
-        },
-        "codeload.github.com": {
-            "host": "20.207.73.88"
-        },
-        "uploads.github.com": {
-            "host": "20.207.73.81"
-        },
-        "alive.github.com": {
-            "host": "140.82.112.26"
-        },
-        "*(github.io|.githubusercontent.com);(page|doc)s.github.com": {
-            "host": "146.75.48.133"
-        },
-        "objects-origin.githubusercontent.com": {
-            "host": "140.82.113.22"
-        },
-        "(cn|purr|et).nytimes.com": {},
-        "*nyt(imes|).com": {
-            "host": "199.232.137.164"
-        },
         "*(google.com|google.com.hk|gmail.com|google.dev|googleapis.com|gstatic.com|googleusercontent.com|.google|goo.gl|translate.goog|android.com|ai.dev|blogger.com|blogspot.com|blogblog.com|chrome.com|chromium.org|golang.org|youtube.com|youtu.be|youtube-nocookie.com|.ytimg.com|.ggpht.com|gvt1.com|withgoogle.com|googlesource.com)": {
             "host": "^142.250.20.90",
             "tls13_only": true,
@@ -117,52 +93,12 @@
         "*.googlevideo.com": {
             "dns_mode": "prefer_ipv6"
         },
-        "*telegram.(org|me);t.me": {
-            "host": "149.154.161.145"
-        },
-        "zws5(|-1).web.telegram.org": {
-            "host": "149.154.170.200"
-        },
-        "platform.twitter.com": {
-            "host": "146.75.120.157"
-        },
-        "*x.com;(video|abs|pbs).twimg.com": {
-            "host": "172.64.229.211"
-        },
-        "abs-0.twimg.com": {
-            "host": "146.75.48.159"
-        },
-        "video.pscp.tv": {
-            "host": "146.75.34.164"
-        },
-        "*webnode.(jp|com)": {
-            "mode": "raw"
-        },
-        "onedrive.live.com": {
-            "host": "13.107.139.11",
+        "(skyapi.|)onedrive.live.com;*(disk.yandex.com|vercel.app)": {
             "mode": "tls-rf",
             "num_records": 1,
             "num_segs": 3
         },
-        "skyapi.onedrive.live.com": {
-            "host": "13.107.42.12",
-            "mode": "tls-rf",
-            "num_records": 1,
-            "num_segs": 3
-        },
-        "*disk.yandex.com": {
-            "host": "87.250.250.50",
-            "mode": "tls-rf",
-            "num_records": 1,
-            "num_segs": 3
-        },
-        "*vercel.app": {
-            "host": "64.29.17.1",
-            "num_records": 1,
-            "num_segs": 4,
-            "oob": true
-        },
-        "*bing.(com|net);*microsoft(|online).com;*(live|msn|skype).com;*office.(com|net);*(mozilla.com|mozilla.net|mozilla.org|firefox.com|firefox.com.cn|mozgcp.net)": {
+        "*.cn;*bing.(com|net);*microsoft(|online).com;*(live|msn|skype).com;*office.(com|net);*mozilla.(com|net|org);*(firefox.com|mozgcp.net)": {
             "mode": "raw",
             "host": "self"
         },
@@ -170,7 +106,7 @@
             "mode": "raw",
             "host": "self"
         },
-        "imp.pixiv.net;nav-edge.smartscreen.microsoft.com;collector.github.com;*ads.nicovideo.jp;browser.events.data.msn.cn": {
+        "imp.pixiv.net;nav-edge.smartscreen.microsoft.com;collector.github.com;*ads.nicovideo.jp;browser.events.data.msn.cn;www.googlemanager.com": {
             "mode": "block"
         }
     }
