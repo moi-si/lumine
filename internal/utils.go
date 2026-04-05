@@ -8,9 +8,12 @@ import (
 	"net/netip"
 	"strings"
 	"syscall"
+	"time"
 
 	log "github.com/moi-si/mylog"
 )
+
+const readTimeout = 5 * time.Second
 
 func findLastDot(data []byte, sniPos, sniLen int) (offset int, found bool) {
 	for i := sniPos + sniLen; i >= sniPos; i-- {

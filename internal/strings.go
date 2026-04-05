@@ -7,7 +7,11 @@ import (
 )
 
 func byteToString(b byte) string {
-	return fmt.Sprintf("%x", b)
+	var hexBuf [2]byte
+	const hexDigits = "0123456789abcdef"
+	hexBuf[0] = hexDigits[b>>4]
+	hexBuf[1] = hexDigits[b&0x0f]
+	return string(hexBuf[:])
 }
 
 func bytesHasPrefix(b []byte, prefixes ...string) bool {

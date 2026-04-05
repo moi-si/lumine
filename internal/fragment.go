@@ -11,7 +11,7 @@ func sendRecords(conn net.Conn, clientHello []byte,
 	offset, length, records, segments int,
 	oob, oobex, modMinorVer bool, interval time.Duration) error {
 	if modMinorVer {
-		clientHello[2] = 0x04
+		clientHello[2] = 0x4
 	}
 
 	if records == 1 {

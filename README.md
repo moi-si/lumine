@@ -2,7 +2,7 @@
 
 [简体中文](./README_zh.md)
 
-A lightweight local HTTP/SOCKS5 proxy server that protects TLS connections over TCP.
+A lightweight local proxy server that protects TLS connections over TCP, operating entirely without requiring system privileges.
 
 ## Installation
 

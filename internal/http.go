@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"sync/atomic"
-	"time"
 
 	log "github.com/moi-si/mylog"
 )
@@ -39,13 +38,10 @@ func HTTPAccept(addr *string, serverAddr string) {
 	srv := &http.Server{
 		Addr:              listenAddr,
 		Handler:           http.HandlerFunc(httpHandler),
-		ReadHeaderTimeout: 10 * time.Second,
-	}
-	if listenAddr[0] == ':' {
-		listenAddr = "0.0.0.0" + listenAddr
+		ReadHeaderTimeout: readTimeout,
 	}
 	logger := log.New(os.Stdout, "[H00000]", log.LstdFlags, logLevel)
-	logger.Info("HTTP proxy server started at", listenAddr)
+	logger.Info("HTTP proxy server started at", srv.Addr)
 
 	if err := srv.ListenAndServe(); err != nil {
 		logger.Error("HTTP ListenAndServe:", err)
@@ -141,11 +137,10 @@ func handleConnect(logger *log.Logger, w http.ResponseWriter, req *http.Request)
 		}
 	}()
 
-	replyFirst := policy.ReplyFirst == BoolTrue
-	if !replyFirst {
+	if !(policy.ReplyFirst == BoolTrue) {
 		dstConn, err = net.DialTimeout("tcp", dest, policy.ConnectTimeout)
 		if err != nil {
-			logger.Error("Connection failed:", err)
+			logger.Error("Connection to", oldDest, "failed:", err)
 			_, err = cliConn.Write([]byte("HTTP/1.1 502 Bad Gateway\r\n\r\n"))
 			if err != nil {
 				logger.Error("Send 502:", err)
@@ -160,7 +155,7 @@ func handleConnect(logger *log.Logger, w http.ResponseWriter, req *http.Request)
 	}
 
 	closeHere = false
-	handleTunnel(policy, replyFirst, dstConn, cliConn, logger, dest, originHost)
+	handleTunnel(policy, dstConn, cliConn, logger, dest, oldDest, originHost)
 }
 
 func forwardHTTPRequest(logger *log.Logger, w http.ResponseWriter, originReq *http.Request) {

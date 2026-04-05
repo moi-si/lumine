@@ -20,8 +20,8 @@ const (
 )
 
 func handleTunnel(
-	p *Policy, replyFirst bool, dstConn, cliConn net.Conn, logger *log.Logger,
-	target, originHost string) {
+	p *Policy, dstConn, cliConn net.Conn, logger *log.Logger,
+	oldTarget, target, originHost string) {
 	var (
 		err       error
 		once      sync.Once
@@ -44,10 +44,10 @@ func handleTunnel(
 	defer once.Do(closeBoth)
 
 	if p.Mode == ModeRaw {
-		if replyFirst {
+		if dstConn == nil {
 			dstConn, err = net.DialTimeout("tcp", target, p.ConnectTimeout)
 			if err != nil {
-				logger.Error("Connection failed:", err)
+				logger.Error("Connection to", oldTarget, "failed:", err)
 				return
 			}
 		}
@@ -70,7 +70,7 @@ func handleTunnel(
 			payloadLen := 5 + int(binary.BigEndian.Uint16(peekBytes[3:5]))
 			var ok bool
 			if dstConn, ok = handleTLS(logger, payloadLen,
-				p, replyFirst, originHost, target,
+				p, originHost, oldTarget, target,
 				br, cliConn, dstConn); !ok {
 				return
 			}
@@ -82,7 +82,7 @@ func handleTunnel(
 			if err == nil {
 				var ok bool
 				if dstConn, ok = handleHTTP(logger, req,
-					p, replyFirst, originHost, target,
+					p, originHost, oldTarget, target,
 					cliConn, dstConn); !ok {
 					return
 				}
@@ -92,19 +92,9 @@ func handleTunnel(
 		} else {
 			logger.Info("Unknown protocol")
 		}
-		// br has already buffered part of the client data (from Peek). If we
-		// continued reading from cliConn directly, some of the buffered data
-		// would NOT be included, leading to missing bytes. Using br ensures
-		// all data, both buffered and unbuffered, is consumed.
-		//
-		// Additionally, bufio.Reader preserves the underlying ReadFrom method,
-		// allowing io.Copy to use the optimized ReadFrom mechanism for
-		// performance. This means io.Copy(dstConnTCP, cliReader) will be just
-		// as fast as io.Copy(dstConnTCP, cliConn).
 		cliReader = br
 	}
 
-	// Get TCPConn type for CloseWrite support.
 	srcConnTCP, dstConnTCP := cliConn.(*net.TCPConn), dstConn.(*net.TCPConn)
 	done := make(chan struct{})
 	go func() {
@@ -137,7 +127,7 @@ func handleTunnel(
 
 func handleHTTP(
 	logger *log.Logger, req *http.Request,
-	p *Policy, replyFirst bool, originHost, target string,
+	p *Policy, originHost, oldTarget, target string,
 	cliConn, dstConn net.Conn) (newConn net.Conn, ok bool) {
 	var err error
 	defer func() {
@@ -156,10 +146,10 @@ func handleHTTP(
 	logger.Info("host="+host, "method="+req.Method, "url="+req.URL.String())
 
 	if p.HttpStatus == 0 || p.HttpStatus == -1 {
-		if replyFirst {
+		if dstConn == nil {
 			dstConn, err = net.DialTimeout("tcp", target, p.ConnectTimeout)
 			if err != nil {
-				logger.Error("Connection failed:", err)
+				logger.Error("Connection to", oldTarget, "failed:", err)
 				resp := &http.Response{
 					Status:        "502 Bad Gateway",
 					StatusCode:    502,
@@ -206,7 +196,7 @@ func handleHTTP(
 }
 
 func handleTLS(logger *log.Logger, recordLen int,
-	p *Policy, replyFirst bool, originHost, target string,
+	p *Policy, originHost, oldTarget, target string,
 	br *bufio.Reader, cliConn, dstConn net.Conn) (newConn net.Conn, ok bool) {
 	record := make([]byte, recordLen)
 	if n, err := br.Read(record); err != nil {
@@ -232,10 +222,10 @@ func handleTLS(logger *log.Logger, recordLen int,
 	}
 	if sniPos <= 0 || sniLen <= 0 {
 		logger.Info("SNI not found")
-		if replyFirst {
+		if dstConn == nil {
 			dstConn, err = net.DialTimeout("tcp", target, p.ConnectTimeout)
 			if err != nil {
-				logger.Error("Connection failed:", err)
+				logger.Error("Connection to", oldTarget, "failed:", err)
 				return
 			}
 		}
@@ -265,10 +255,10 @@ func handleTLS(logger *log.Logger, recordLen int,
 			}
 		}
 
-		if replyFirst {
+		if dstConn == nil {
 			dstConn, err = net.DialTimeout("tcp", target, p.ConnectTimeout)
 			if err != nil {
-				logger.Error("Connection failed:", err)
+				logger.Error("Connection to", oldTarget, "failed:", err)
 				return
 			}
 		}

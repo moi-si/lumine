@@ -459,6 +459,9 @@ func genDoHDialFunc() (func(ctx context.Context, network, address string) (net.C
 			selectedHost, foundInHosts = hostsMatcher.Find(host)
 			if foundInHosts {
 				disableRedirect = strings.HasPrefix(selectedHost, noRedirectPrefix)
+				if disableRedirect {
+					selectedHost = selectedHost[1:]
+				}
 			}
 		} else {
 			selectedHost = policyHost
@@ -553,6 +556,9 @@ func genPolicy(logger *log.Logger, originHost string) (dstHost string, p *Policy
 			logger.Info(logPrefix, originHost, "->", dstHost)
 		default:
 			disableRedirect = strings.HasPrefix(selectedHost, noRedirectPrefix)
+			if disableRedirect {
+				selectedHost = selectedHost[1:]
+			}
 		}
 	} else {
 		selectedHost = policyHost

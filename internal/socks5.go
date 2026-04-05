@@ -7,17 +7,17 @@ import (
 	"net"
 	"os"
 	"slices"
-	"strconv"
 
 	log "github.com/moi-si/mylog"
 )
 
-const (
-	socks5RepSuccess          byte = 0x00
-	socks5RepServerFailure    byte = 0x01
-	socks5RepConnNotAllowed   byte = 0x02
-	socks5RepCmdNotSupported  byte = 0x07
-	socks5RepAtypNotSupported byte = 0x08
+var (
+	noAuthReply                 = [2]byte{0x5, 0x0}
+	socks5ReplySuccess          = [10]byte{0x5, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0}
+	socks5ReplyServerFailure    = [10]byte{0x5, 0x1, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0}
+	socks5ReplyConnNotAllowed   = [10]byte{0x5, 0x2, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0}
+	socks5ReplyCmdNotSupported  = [10]byte{0x5, 0x7, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0}
+	socks5ReplyAtypNotSupported = [10]byte{0x5, 0x8, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0}
 )
 
 func SOCKS5Accept(addr *string, serverAddr string, done chan struct{}) {
@@ -42,10 +42,7 @@ func SOCKS5Accept(addr *string, serverAddr string, done chan struct{}) {
 		logger.Error("Failed to start SOCKS5 server:", err)
 		return
 	}
-	if listenAddr[0] == ':' {
-		listenAddr = "0.0.0.0" + listenAddr
-	}
-	logger.Info("SOCKS5 proxy server started at", listenAddr)
+	logger.Info("SOCKS5 proxy server started at", ln.Addr().String())
 
 	var connID uint32
 	for {
@@ -62,17 +59,17 @@ func SOCKS5Accept(addr *string, serverAddr string, done chan struct{}) {
 	}
 }
 
-func readN(conn net.Conn, n int) ([]byte, error) {
-	buf := make([]byte, n)
+func readN(conn net.Conn, buf []byte) ([]byte, error) {
 	_, err := io.ReadFull(conn, buf)
 	return buf, err
 }
 
-func sendReply(logger *log.Logger, conn net.Conn, rep byte) {
-	resp := []byte{0x05, rep, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
-	if _, err := conn.Write(resp); err != nil {
-		logger.Debug("Send SOCKS5 reply:", err)
+func sendReply(logger *log.Logger, conn net.Conn, reply [10]byte) bool {
+	if _, err := conn.Write(reply[:]); err != nil {
+		logger.Error("Send SOCKS5 reply:", err)
+		return false
 	}
+	return true
 }
 
 func socks5Handler(cliConn net.Conn, id uint32) {
@@ -93,56 +90,56 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 		}
 	}()
 
-	header, err := readN(cliConn, 2)
+	var headerBuf [2]byte
+	header, err := readN(cliConn, headerBuf[:])
 	if err != nil {
 		logger.Error("Read method selection:", err)
 		return
 	}
-	if header[0] != 0x05 {
+	if header[0] != 0x5 {
 		logger.Error("Expected socks version 5, but got", byteToString(header[0]))
 		return
 	}
-	nMethods := int(header[1])
-	methods, err := readN(cliConn, nMethods)
+
+	var buf [256]byte
+	methods, err := readN(cliConn, buf[:header[1]])
 	if err != nil {
 		logger.Error("Read methods:", err)
 		return
 	}
-	var authMethod byte = 0xFF
-	if slices.Contains(methods, 0x00) {
-		authMethod = 0x00
-	}
-	if _, err = cliConn.Write([]byte{0x05, authMethod}); err != nil {
-		logger.Error("Send auth method:", err)
-		return
-	}
-	if authMethod == 0xFF {
+
+	if !slices.Contains(methods, 0x0) {
 		logger.Error("`no auth` method not found")
 		return
 	}
+	if _, err = cliConn.Write(noAuthReply[:]); err != nil {
+		logger.Error("Send auth method:", err)
+		return
+	}
 
-	header, err = readN(cliConn, 4)
+	header, err = readN(cliConn, buf[:4])
 	if err != nil {
 		logger.Error("Read request header:", err)
 		return
 	}
-	if header[0] != 0x05 {
+	if header[0] != 0x5 {
 		logger.Error("Expected socks version 5, but got", byteToString(header[0]))
 		return
 	}
-	if header[1] != 0x01 {
+	if header[1] != 0x1 {
 		logger.Error("Expected cmd CONNECT, but got", byteToString(header[1]))
-		sendReply(logger, cliConn, socks5RepCmdNotSupported)
+		sendReply(logger, cliConn, socks5ReplyCmdNotSupported)
 		return
 	}
 
 	var (
 		originHost, dstHost string
 		policy              *Policy
+		blocked             bool
 	)
 	switch header[3] {
-	case 0x01: // IPv4 address
-		ipBytes, err := readN(cliConn, 4)
+	case 0x1: // IPv4 address
+		ipBytes, err := readN(cliConn, buf[:4])
 		if err != nil {
 			logger.Error("Read IPv4 address:", err)
 			return
@@ -152,7 +149,7 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 		dstHost, ipPolicy, err = ipRedirect(logger, originHost)
 		if err != nil {
 			logger.Error("IP redirect:", err)
-			sendReply(logger, cliConn, socks5RepServerFailure)
+			sendReply(logger, cliConn, socks5ReplyServerFailure)
 			return
 		}
 		if ipPolicy == nil {
@@ -160,8 +157,8 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 		} else {
 			policy = mergePolicies(ipPolicy, &defaultPolicy)
 		}
-	case 0x04: // IPv6 address
-		ipBytes, err := readN(cliConn, 16)
+	case 0x4: // IPv6 address
+		ipBytes, err := readN(cliConn, buf[:16])
 		if err != nil {
 			logger.Error("Read IPv6 address:", err)
 			return
@@ -171,7 +168,7 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 		dstHost, ipPolicy, err = ipRedirect(logger, originHost)
 		if err != nil {
 			logger.Error("IP redirect:", err)
-			sendReply(logger, cliConn, socks5RepServerFailure)
+			sendReply(logger, cliConn, socks5ReplyServerFailure)
 			return
 		}
 		if ipPolicy == nil {
@@ -179,66 +176,69 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 		} else {
 			policy = mergePolicies(ipPolicy, &defaultPolicy)
 		}
-	case 0x03: // Domain name
-		lenByte, err := readN(cliConn, 1)
+	case 0x3: // Domain name
+		lenByte, err := readN(cliConn, buf[:1])
 		if err != nil {
 			logger.Error("Read domain length:", err)
 			return
 		}
-		domainBytes, err := readN(cliConn, int(lenByte[0]))
+		if lenByte[0] >= 253 {
+			logger.Error("Domain length too long:", lenByte[0])
+		}
+		domainBytes, err := readN(cliConn, buf[:lenByte[0]])
 		if err != nil {
 			logger.Error("Read domain address:", err)
 		}
 		originHost = string(domainBytes)
-		var failed, blocked bool
+		var failed bool
 		dstHost, policy, failed, blocked = genPolicy(logger, originHost)
 		if failed {
-			sendReply(logger, cliConn, 0x01)
-			return
-		}
-		if blocked {
-			logger.Info("Connection blocked:", originHost)
-			if policy.ReplyFirst == BoolTrue {
-				sendReply(logger, cliConn, socks5RepSuccess)
-			} else {
-				sendReply(logger, cliConn, socks5RepConnNotAllowed)
-			}
+			sendReply(logger, cliConn, socks5ReplyServerFailure)
 			return
 		}
 	default:
-		logger.Error("Invalid address type:", byteToString(header[3]))
-		sendReply(logger, cliConn, socks5RepAtypNotSupported)
+		logger.Error("Invalid atyp:", byteToString(header[3]))
+		sendReply(logger, cliConn, socks5ReplyAtypNotSupported)
 		return
 	}
-	portBytes, err := readN(cliConn, 2)
+
+	policyExists := policy != nil
+	if blocked || (policyExists && policy.Mode == ModeBlock) {
+		logger.Info("Connection blocked:", originHost)
+		if policyExists && policy.ReplyFirst == BoolTrue {
+			sendReply(logger, cliConn, socks5ReplySuccess)
+		} else {
+			sendReply(logger, cliConn, socks5ReplyConnNotAllowed)
+		}
+		return
+	}
+	portBytes, err := readN(cliConn, buf[:2])
 	if err != nil {
 		logger.Error("Read port:", err)
 		return
 	}
 	dstPort := binary.BigEndian.Uint16(portBytes)
-	oldTarget := net.JoinHostPort(originHost, strconv.FormatUint(uint64(dstPort), 10))
+	oldTarget := net.JoinHostPort(originHost, formatUint(dstPort))
+
 	logger.Info("CONNECT", oldTarget)
 	logger.Info("Policy:", policy)
-	if policy.Mode == ModeBlock {
-		sendReply(logger, cliConn, socks5RepConnNotAllowed)
-		return
-	}
 	if policy.Port != 0 && policy.Port != -1 {
 		dstPort = uint16(policy.Port)
 	}
 	target := net.JoinHostPort(dstHost, formatUint(dstPort))
 
-	replyFirst := policy.ReplyFirst == BoolTrue
-	if !replyFirst {
+	if !(policy.ReplyFirst == BoolTrue) {
 		dstConn, err = net.DialTimeout("tcp", target, policy.ConnectTimeout)
 		if err != nil {
-			logger.Error("Connection failed:", err)
-			sendReply(logger, cliConn, socks5RepServerFailure)
+			logger.Error("Connection to", oldTarget, "failed:", err)
+			sendReply(logger, cliConn, socks5ReplyServerFailure)
 			return
 		}
 	}
-	sendReply(logger, cliConn, socks5RepSuccess)
+	if !sendReply(logger, cliConn, socks5ReplySuccess) {
+		return
+	}
 
 	closeHere = false
-	handleTunnel(policy, replyFirst, dstConn, cliConn, logger, target, originHost)
+	handleTunnel(policy, dstConn, cliConn, logger, target, oldTarget, originHost)
 }
