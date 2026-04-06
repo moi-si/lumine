@@ -77,7 +77,8 @@ func sendWithNoise(
 	fakeTTL, defaultTTL, level, opt int,
 	fakeSleep time.Duration,
 ) error {
-	if len(fakeData) != len(realData) {
+	realDataLen := len(realData)
+	if len(fakeData) != realDataLen {
 		return errors.New("the length of realData must equal to that of fakeData")
 	}
 
@@ -101,7 +102,9 @@ func sendWithNoise(
 		return wrap("sync fake data", err)
 	}
 
-	if err = windows.SetsockoptInt(sockHandle, level, opt, fakeTTL); err != nil {
+	if err = windows.SetsockoptInt(
+		sockHandle, level, opt, fakeTTL,
+	); err != nil {
 		return wrap("set fake TTL", err)
 	}
 
@@ -127,7 +130,7 @@ func sendWithNoise(
 	}
 	var transmitFileErr error
 	rawCtrlErr := rawConn.Control(func(fd uintptr) {
-		toWrite := uint32(len(fakeData))
+		toWrite := uint32(realDataLen)
 		transmitFileErr = windows.TransmitFile(
 			sockHandle,
 			windows.Handle(fd),
@@ -163,32 +166,44 @@ func sendWithNoise(
 	if _, err = tmpFile.Seek(0, io.SeekStart); err != nil {
 		return wrap("seek start", err)
 	}
-	if err = windows.SetsockoptInt(sockHandle, level, opt, defaultTTL); err != nil {
+	if err = windows.SetsockoptInt(
+		sockHandle, level, opt, defaultTTL,
+	); err != nil {
 		return wrap("set default TTL", err)
 	}
 
 	event, err := windows.WaitForSingleObject(ov.HEvent, 5000)
 	if err != nil {
-		return wrap("wait for event", err)
+		return wrap("wait for TransmitFile", err)
 	}
 
 	switch event {
 	case windows.WAIT_OBJECT_0:
-		return nil
 	case uint32(windows.WAIT_TIMEOUT):
-		return errors.New("TransmitFile: timeout (5s)")
+		return errors.New("wait for TransmitFile: timeout (5s)")
 	case windows.WAIT_ABANDONED:
-		return errors.New("TransmitFile: WAIT_ABANDONED")
+		return errors.New("wait for TransmitFile: WAIT_ABANDONED")
 	case windows.WAIT_FAILED:
-		return wrap("TransmitFile: WAIT_FAILED", windows.GetLastError())
+		return wrap("wait for TransmitFile: WAIT_FAILED", windows.GetLastError())
 	default:
-		return errors.New("TransmitFile: unexpected event: " + formatUint(event))
+		return errors.New("wait for TransmitFile: unexpected event: " + formatUint(event))
 	}
+
+	var n, flags uint32
+	if err = windows.WSAGetOverlappedResult(
+		sockHandle, &ov, &n, false, &flags,
+	); err != nil {
+		return wrap("get TransmitFile result", err)
+	}
+	if int(n) < realDataLen {
+		return errors.New(joinString("sent only ", n, " of ", realDataLen, " bytes"))
+	}
+	return nil
 }
 
 func desyncSend(
 	conn net.Conn, ipv6 bool,
-	firstPacket []byte, sniPos, sniLen, fakeTTL int, fakeSleep time.Duration,
+	record []byte, sniPos, sniLen, fakeTTL int, fakeSleep time.Duration,
 ) error {
 	rawConn, err := getTCPRawConn(conn)
 	if err != nil {
@@ -220,25 +235,25 @@ func desyncSend(
 		fakeSleep = minInterval
 	}
 
-	cut, found := findLastDot(firstPacket, sniPos, sniLen)
+	cut, found := findLastDot(record, sniPos, sniLen)
 	var fakeData []byte
 	if found {
 		fakeData = make([]byte, cut)
-		copy(fakeData, firstPacket[:sniPos])
+		copy(fakeData, record[:sniPos])
 	} else {
-		fakeData = firstPacket[:cut]
+		fakeData = record[:cut]
 	}
 
 	if err = sendWithNoise(
 		sockHandle,
-		fakeData, firstPacket[:cut],
+		fakeData, record[:cut],
 		fakeTTL, defaultTTL,
 		level, opt,
 		fakeSleep,
 	); err != nil {
 		return wrap("send data with noise", err)
 	}
-	if _, err = conn.Write(firstPacket[cut:]); err != nil {
+	if _, err = conn.Write(record[cut:]); err != nil {
 		return wrap("send remaining data", err)
 	}
 	return nil

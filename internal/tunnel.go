@@ -21,7 +21,8 @@ const (
 
 func handleTunnel(
 	p *Policy, dstConn, cliConn net.Conn, logger *log.Logger,
-	oldTarget, target, originHost string) {
+	oldTarget, target, originHost string,
+) {
 	var (
 		err       error
 		once      sync.Once
@@ -230,14 +231,14 @@ func handleTLS(logger *log.Logger, recordLen int,
 			}
 		}
 		if _, err = dstConn.Write(record); err != nil {
-			logger.Error("ClientHello sending directly:", err)
+			logger.Error("Send ClientHello directly:", err)
 			return
 		}
-		logger.Info("ClientHello sent directly")
+		logger.Info("Sent ClientHello directly")
 	} else {
 		sniStr := string(record[sniPos : sniPos+sniLen])
 		if originHost != sniStr {
-			logger.Info("Server name:", sniStr)
+			logger.Info("Mismatched SNI:", sniStr)
 			var sniPolicy *Policy
 			if domainPolicy, exists := domainMatcher.Find(sniStr); exists {
 				sniPolicy = mergePolicies(domainPolicy, &defaultPolicy)
@@ -268,7 +269,7 @@ func handleTLS(logger *log.Logger, recordLen int,
 				logger.Error("Send ClientHello:", err)
 				return
 			}
-			logger.Info("ClientHello sent directly")
+			logger.Info("Sent ClientHello directly")
 		case ModeTLSRF:
 			err = sendRecords(dstConn, record, sniPos, sniLen,
 				p.NumRecords, p.NumSegments,
@@ -278,12 +279,13 @@ func handleTLS(logger *log.Logger, recordLen int,
 				logger.Error("TLS fragment:", err)
 				return
 			}
-			logger.Info("ClientHello sent in fragments")
+			logger.Info("Sent ClientHello in fragments")
 		case ModeTTLD:
 			ipv6 := target[0] == '['
 			ttl, err := getFakeTTL(logger, p, target, ipv6)
 			if err != nil {
-				logger.Error("get fake TTL:", err)
+				logger.Error("Get fake TTL:", err)
+				return
 			}
 			if err = desyncSend(
 				dstConn, ipv6, record,
@@ -292,7 +294,7 @@ func handleTLS(logger *log.Logger, recordLen int,
 				logger.Error("TTL desync:", err)
 				return
 			}
-			logger.Info("ClientHello sent with fake packet")
+			logger.Info("Sent ClientHello with fake packet")
 		}
 	}
 	return dstConn, true
