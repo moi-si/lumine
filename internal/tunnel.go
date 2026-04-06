@@ -67,7 +67,7 @@ func handleTunnel(
 
 		// Require the second byte to be 0x03 to avoid handling custom TLS
 		// variants like mmtls.
-		if peekBytes[0] == 0x16 && peekBytes[1] == 0x03 {
+		if peekBytes[0] == tlsRecordTypeHandshake && peekBytes[1] == tlsMajorVersion {
 			payloadLen := 5 + int(binary.BigEndian.Uint16(peekBytes[3:5]))
 			var ok bool
 			if dstConn, ok = handleTLS(logger, payloadLen,
