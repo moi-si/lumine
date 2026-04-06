@@ -225,7 +225,8 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 	if policy.Port != 0 && policy.Port != -1 {
 		dstPort = uint16(policy.Port)
 	}
-	target := net.JoinHostPort(dstHost, formatUint(dstPort))
+	portStr := formatUint(dstPort)
+	target := net.JoinHostPort(dstHost, portStr)
 
 	if !(policy.ReplyFirst == BoolTrue) {
 		dstConn, err = net.DialTimeout("tcp", target, policy.ConnectTimeout)
@@ -240,5 +241,5 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 	}
 
 	closeHere = false
-	handleTunnel(policy, dstConn, cliConn, logger, oldTarget, target, originHost)
+	handleTunnel(policy, dstConn, cliConn, logger, oldTarget, target, originHost, portStr)
 }

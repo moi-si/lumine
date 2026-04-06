@@ -155,7 +155,7 @@ func handleConnect(logger *log.Logger, w http.ResponseWriter, req *http.Request)
 	}
 
 	closeHere = false
-	handleTunnel(policy, dstConn, cliConn, logger, oldDest, dest, originHost)
+	handleTunnel(policy, dstConn, cliConn, logger, oldDest, dest, originHost, dstPort)
 }
 
 func forwardHTTPRequest(logger *log.Logger, w http.ResponseWriter, originReq *http.Request) {

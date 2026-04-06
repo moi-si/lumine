@@ -35,6 +35,7 @@
   },
   "default_policy": {
     "reply_first": false,
+    "prefer_sniffed": false,
     "dns_mode": "prefer_ipv4",
     "connect_timeout": "10s",
     "tls13_only": false,

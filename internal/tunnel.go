@@ -21,7 +21,7 @@ const (
 
 func handleTunnel(
 	p *Policy, dstConn, cliConn net.Conn, logger *log.Logger,
-	oldTarget, target, originHost string,
+	oldTarget, target, originHost, portStr string,
 ) {
 	var (
 		err       error
@@ -71,7 +71,7 @@ func handleTunnel(
 			payloadLen := 5 + int(binary.BigEndian.Uint16(peekBytes[3:5]))
 			var ok bool
 			if dstConn, ok = handleTLS(logger, payloadLen,
-				p, originHost, oldTarget, target,
+				p, originHost, oldTarget, target, portStr,
 				br, cliConn, dstConn); !ok {
 				return
 			}
@@ -197,7 +197,7 @@ func handleHTTP(
 }
 
 func handleTLS(logger *log.Logger, recordLen int,
-	p *Policy, originHost, oldTarget, target string,
+	p *Policy, originHost, oldTarget, target, portStr string,
 	br *bufio.Reader, cliConn, dstConn net.Conn) (newConn net.Conn, ok bool) {
 	record := make([]byte, recordLen)
 	if n, err := br.Read(record); err != nil {
@@ -239,20 +239,39 @@ func handleTLS(logger *log.Logger, recordLen int,
 		sniStr := string(record[sniPos : sniPos+sniLen])
 		if originHost != sniStr {
 			logger.Info("Mismatched SNI:", sniStr)
-			var sniPolicy *Policy
-			if domainPolicy, exists := domainMatcher.Find(sniStr); exists {
-				sniPolicy = mergePolicies(domainPolicy, &defaultPolicy)
-			} else {
-				sniPolicy = &defaultPolicy
-			}
-			switch sniPolicy.Mode {
-			case ModeBlock:
-				logger.Info("Connection blocked")
-				return
-			case ModeTLSAlert:
-				logger.Info("Connection blocked (TLS alert)")
-				sendTLSAlert(logger, cliConn, prtVer, tlsAlertAccessDenied, tlsAlertLevelFatal)
-				return
+			if p.PreferSniffed == BoolTrue {
+				newDst, sniPolicy, failed, blocked := genPolicy(logger, sniStr)
+				if failed {
+					logger.Error("Failed to generate SNI policy, fall back to origin")
+				} else {
+					sniPolicyExists := sniPolicy != nil
+					if blocked || (sniPolicyExists && sniPolicy.Mode == ModeBlock) {
+						logger.Info("Connection blocked")
+						return
+					}
+					if sniPolicy.Mode == ModeTLSAlert {
+						logger.Info("Connection blocked (TLS alert)")
+						sendTLSAlert(logger, cliConn, prtVer, tlsAlertAccessDenied, tlsAlertLevelFatal)
+						return
+					}
+				}
+				logger.Info("New policy:", sniPolicy)
+				if sniPolicy.Port != 0 && sniPolicy.Port != -1 {
+					portStr = formatInt(sniPolicy.Port)
+				}
+				newTarget := net.JoinHostPort(newDst, portStr)
+				newConn, err := net.DialTimeout("tcp", newTarget, sniPolicy.ConnectTimeout)
+				if err == nil {
+					if dstConn != nil {
+						dstConn.Close()
+					}
+					dstConn = newConn
+					p = sniPolicy
+					target = newTarget
+					logger.Info("Target has been changed to", sniStr)
+				} else {
+					logger.Error("Connection to ", newTarget, "failed:", err, ", fall back to origin")
+				}
 			}
 		}
 

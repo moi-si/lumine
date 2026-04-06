@@ -107,6 +107,8 @@ func parseClientHello(data []byte) (prtVer []byte, sniPos int, sniLen int, hasKe
 	}
 	extensionsEnd := offset + extTotalLen
 
+	sniPos = -1
+
 	for offset+4 <= extensionsEnd {
 		extType := binary.BigEndian.Uint16(data[offset : offset+2])
 		extLen := int(binary.BigEndian.Uint16(data[offset+2 : offset+4]))

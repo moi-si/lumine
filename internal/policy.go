@@ -98,6 +98,7 @@ func (b *BoolWithDefault) UnmarshalJSON(data []byte) error {
 
 type Policy struct {
 	ReplyFirst     BoolWithDefault
+	PreferSniffed  BoolWithDefault
 	DNSMode        DNSMode
 	ConnectTimeout time.Duration
 	Host           string
@@ -123,6 +124,7 @@ type Policy struct {
 
 func (p *Policy) UnmarshalJSON(data []byte) error {
 	var tmp struct {
+		PreferSniffed  BoolWithDefault `json:"prefer_sniffed"`
 		ReplyFirst     BoolWithDefault `json:"reply_first"`
 		ConnectTimeout *string         `json:"connect_timeout"`
 		Host           *string         `json:"host"`
@@ -148,6 +150,7 @@ func (p *Policy) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
+	p.PreferSniffed = tmp.PreferSniffed
 	p.ReplyFirst = tmp.ReplyFirst
 	p.TLS13Only = tmp.TLS13Only
 	p.Mode = tmp.Mode
@@ -347,6 +350,9 @@ func mergePolicies(policies ...*Policy) *Policy {
 		SingleTimeout:  unsetInt,
 	}
 	for _, p := range policies {
+		if merged.PreferSniffed == BoolUnset && p.PreferSniffed != BoolUnset {
+			merged.PreferSniffed = p.PreferSniffed
+		}
 		if merged.ReplyFirst == BoolUnset && p.ReplyFirst != BoolUnset {
 			merged.ReplyFirst = p.ReplyFirst
 		}
