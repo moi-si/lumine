@@ -204,7 +204,7 @@ func handleTLS(logger *log.Logger, recordLen int,
 		logger.Error("Read first record:", err)
 		return
 	} else if n < int(recordLen) {
-		logger.Error(joinString("Only ", n, " of ", recordLen, " bytes read"))
+		logger.Error(joinString("Read only ", n, " of ", recordLen, " bytes"))
 		return
 	}
 	prtVer, sniPos, sniLen, hasKeyShare, err := parseClientHello(record)
@@ -254,23 +254,23 @@ func handleTLS(logger *log.Logger, recordLen int,
 						sendTLSAlert(logger, cliConn, prtVer, tlsAlertAccessDenied, tlsAlertLevelFatal)
 						return
 					}
-				}
-				logger.Info("New policy:", sniPolicy)
-				if sniPolicy.Port != 0 && sniPolicy.Port != -1 {
-					portStr = formatInt(sniPolicy.Port)
-				}
-				newTarget := net.JoinHostPort(newDst, portStr)
-				newConn, err := net.DialTimeout("tcp", newTarget, sniPolicy.ConnectTimeout)
-				if err == nil {
-					if dstConn != nil {
-						dstConn.Close()
+					logger.Info("New policy:", sniPolicy)
+					if sniPolicy.Port != 0 && sniPolicy.Port != -1 {
+						portStr = formatInt(sniPolicy.Port)
 					}
-					dstConn = newConn
-					p = sniPolicy
-					target = newTarget
-					logger.Info("Target has been changed to", sniStr)
-				} else {
-					logger.Error("Connection to ", newTarget, "failed:", err, ", fall back to origin")
+					newTarget := net.JoinHostPort(newDst, portStr)
+					newConn, err := net.DialTimeout("tcp", newTarget, sniPolicy.ConnectTimeout)
+					if err == nil {
+						if dstConn != nil {
+							dstConn.Close()
+						}
+						dstConn = newConn
+						p = sniPolicy
+						target = newTarget
+						logger.Info("Target has been changed to", sniStr)
+					} else {
+						logger.Error(joinString("Connection to ", newTarget, " failed: ", err, ", fall back to origin"))
+					}
 				}
 			}
 		}
