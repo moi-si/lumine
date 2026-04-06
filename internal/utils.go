@@ -24,81 +24,86 @@ func findLastDot(data []byte, sniPos, sniLen int) (offset int, found bool) {
 	return sniLen/2 + sniPos, false
 }
 
-func parseClientHello(data []byte) (prtVer []byte, sniPos int, sniLen int, hasKeyShare bool, err error) {
-	const (
-		recordHeaderLen          = 5
-		handshakeHeaderLen       = 4
-		handshakeTypeClientHello = 0x01
-		extTypeSNI               = 0x0000
-		extTypeKeyShare          = 0x0033
-	)
+const (
+	tlsRecordTypeHandshake      = 0x16
+	tlsMajorVersion             = 0x3
+	tlsRecordHeaderLen          = 5
+	tlsHandshakeHeaderLen       = 4
+	tlsHandshakeTypeClientHello = 0x1
+	tlsExtTypeSNI               = 0x0000
+	tlsExtTypeKeyShare          = 0x0033
+)
 
-	prtVer = nil
-	sniPos = -1
-	sniLen = 0
+func parseClientHello(data []byte) (prtVer []byte, sniPos int, sniLen int, hasKeyShare bool, err error) {
+	if data[0] != tlsRecordTypeHandshake {
+		return nil, -1, 0, false, errors.New("not a TLS handshake record")
+	}
+
+	if data[1] != tlsMajorVersion {
+		return nil, -1, 0, false, errors.New("not a standard TLS record")
+	}
 
 	recordLen := int(binary.BigEndian.Uint16(data[3:5]))
-	if len(data) < recordHeaderLen+recordLen {
-		return prtVer, sniPos, sniLen, false, errors.New("record length exceeds data size")
+	if len(data) < tlsRecordHeaderLen+recordLen {
+		return nil, -1, 0, false, errors.New("record length exceeds data size")
 	}
-	offset := recordHeaderLen
+	offset := tlsRecordHeaderLen
 
-	if recordLen < handshakeHeaderLen {
-		return prtVer, sniPos, sniLen, false, errors.New("handshake message too short")
+	if recordLen < tlsHandshakeHeaderLen {
+		return nil, -1, 0, false, errors.New("handshake message too short")
 	}
-	if data[offset] != handshakeTypeClientHello {
-		return prtVer, sniPos, sniLen, false, fmt.Errorf("not a ClientHello handshake (type=%d)", data[offset])
+	if data[offset] != tlsHandshakeTypeClientHello {
+		return nil, -1, 0, false, fmt.Errorf("not a ClientHello handshake (type=%d)", data[offset])
 	}
 	handshakeLen := int(uint32(data[offset+1])<<16 | uint32(data[offset+2])<<8 | uint32(data[offset+3]))
-	if handshakeLen+handshakeHeaderLen > recordLen {
-		return prtVer, sniPos, sniLen, false, errors.New("handshake length exceeds record length")
+	if handshakeLen+tlsHandshakeHeaderLen > recordLen {
+		return nil, -1, 0, false, errors.New("handshake length exceeds record length")
 	}
-	offset += handshakeHeaderLen
+	offset += tlsHandshakeHeaderLen
 
 	if handshakeLen < 2+32+1 {
-		return prtVer, sniPos, sniLen, false, errors.New("ClientHello too short for mandatory fields")
+		return nil, -1, 0, false, errors.New("ClientHello too short for mandatory fields")
 	}
 	prtVer = data[offset : offset+2]
-	offset += 2
-	offset += 32
+	offset += 2 + 32
 	if offset >= len(data) {
-		return prtVer, sniPos, sniLen, false, errors.New("unexpected end after Random")
+		return prtVer, -1, 0, false, errors.New("unexpected end after Random")
 	}
 	sessionIDLen := int(data[offset])
 	offset++
 	if offset+sessionIDLen > len(data) {
-		return prtVer, sniPos, sniLen, false, errors.New("session_id length exceeds data")
+		return prtVer, -1, 0, false, errors.New("session_id length exceeds data")
 	}
 	offset += sessionIDLen
 
 	if offset+2 > len(data) {
-		return prtVer, sniPos, sniLen, false, errors.New("cannot read cipher_suites length")
+		return prtVer, -1, 0, false, errors.New("cannot read cipher_suites length")
 	}
 	csLen := int(binary.BigEndian.Uint16(data[offset : offset+2]))
 	offset += 2
 	if offset+csLen > len(data) {
-		return prtVer, sniPos, sniLen, false, errors.New("cipher_suites exceed data")
+		return prtVer, -1, 0, false, errors.New("cipher_suites exceed data")
 	}
 	offset += csLen
 
 	if offset >= len(data) {
-		return prtVer, sniPos, sniLen, false, errors.New("cannot read compression_methods length")
+		return prtVer, -1, 0, false, errors.New("cannot read compression_methods length")
 	}
 	compMethodsLen := int(data[offset])
 	offset++
 	if offset+compMethodsLen > len(data) {
-		return prtVer, sniPos, sniLen, false, errors.New("compression_methods exceed data")
+		return prtVer, -1, 0, false, errors.New("compression_methods exceed data")
 	}
 	offset += compMethodsLen
 
 	// Extensions
 	if offset+2 > len(data) {
-		return prtVer, sniPos, sniLen, false, nil
+		return prtVer, -1, 0, false, nil
 	}
 	extTotalLen := int(binary.BigEndian.Uint16(data[offset : offset+2]))
 	offset += 2
 	if offset+extTotalLen > len(data) {
-		return prtVer, sniPos, sniLen, false, errors.New("extensions length exceeds data")
+		return prtVer, -1, 0, false, errors.New("extensions length exceeds data")
 	}
 	extensionsEnd := offset + extTotalLen
 
@@ -112,14 +117,14 @@ func parseClientHello(data []byte) (prtVer []byte, sniPos int, sniLen int, hasKe
 			return prtVer, sniPos, sniLen, false, errors.New("extension length exceeds extensions block")
 		}
 
-		if extType == extTypeKeyShare {
+		if extType == tlsExtTypeKeyShare {
 			hasKeyShare = true
 			if sniPos != -1 {
 				return prtVer, sniPos, sniLen, hasKeyShare, nil
 			}
 		}
 
-		if sniPos == -1 && extType == extTypeSNI {
+		if sniPos == -1 && extType == tlsExtTypeSNI {
 			if extLen < 2 {
 				return prtVer, sniPos, sniLen, hasKeyShare, errors.New("malformed SNI extension (too short for list length)")
 			}

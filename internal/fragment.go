@@ -63,7 +63,7 @@ func sendRecords(conn net.Conn, clientHello []byte,
 	chunks := make([][]byte, 0, records)
 	cut, _ := findLastDot(clientHello, offset, length)
 	header := clientHello[:3]
-	splitAndAppend(clientHello[5:cut], header, leftChunks, &chunks)
+	splitAndAppend(clientHello[tlsRecordHeaderLen:cut], header, leftChunks, &chunks)
 	splitAndAppend(clientHello[cut:], header, rightChunks, &chunks)
 
 	if segments == -1 {
