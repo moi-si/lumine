@@ -240,5 +240,5 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 	}
 
 	closeHere = false
-	handleTunnel(policy, dstConn, cliConn, logger, target, oldTarget, originHost)
+	handleTunnel(policy, dstConn, cliConn, logger, oldTarget, target, originHost)
 }
