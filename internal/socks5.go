@@ -191,7 +191,7 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 		}
 		originHost = string(domainBytes)
 		var failed bool
-		dstHost, policy, failed, blocked = genPolicy(logger, originHost)
+		dstHost, policy, failed, blocked = genPolicy(logger, originHost, false)
 		if failed {
 			sendReply(logger, cliConn, socks5ReplyServerFailure)
 			return

@@ -239,10 +239,19 @@ func handleTLS(logger *log.Logger, recordLen int,
 		sniStr := string(record[sniPos : sniPos+sniLen])
 		if originHost != sniStr {
 			logger.Info("Mismatched SNI:", sniStr)
-			if p.PreferSniffed == BoolTrue {
-				newDst, sniPolicy, failed, blocked := genPolicy(logger, sniStr)
+			switch p.SniffOverrideMode {
+			case SniffOverrideAlways, SniffOverridePolicyExists:
+				var returnWhenPolicyNotExists bool
+				if p.SniffOverrideMode == SniffOverridePolicyExists {
+					returnWhenPolicyNotExists = true
+				}
+				newDst, sniPolicy, failed, blocked := genPolicy(logger, sniStr, returnWhenPolicyNotExists)
 				if failed {
-					logger.Error("Failed to generate SNI policy, fall back to origin")
+					if returnWhenPolicyNotExists {
+						logger.Info("SNI policy not found, fall back to origin")
+					} else {
+						logger.Error("Failed to generate SNI policy, fall back to origin")
+					}
 				} else {
 					sniPolicyExists := sniPolicy != nil
 					if blocked || (sniPolicyExists && sniPolicy.Mode == ModeBlock) {

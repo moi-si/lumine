@@ -18,6 +18,33 @@ const (
 	unsetString = "-"
 )
 
+type SniffOverrideMode uint8
+
+const (
+	SniffOverrideUnset = iota
+	SniffOverrideOff
+	SniffOverrideAlways
+	SniffOverridePolicyExists
+)
+
+func (m *SniffOverrideMode) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "off":
+		*m = SniffOverrideOff
+	case "always":
+		*m = SniffOverrideAlways
+	case "policy_exists":
+		*m = SniffOverridePolicyExists
+	default:
+		return errors.New("invalid sniff_override: " + s)
+	}
+	return nil
+}
+
 type Mode uint8
 
 const (
@@ -97,16 +124,16 @@ func (b *BoolWithDefault) UnmarshalJSON(data []byte) error {
 }
 
 type Policy struct {
-	ReplyFirst     BoolWithDefault
-	PreferSniffed  BoolWithDefault
-	DNSMode        DNSMode
-	ConnectTimeout time.Duration
-	Host           string
-	MapTo          string
-	Port           int
-	HttpStatus     int
-	TLS13Only      BoolWithDefault
-	Mode           Mode
+	ReplyFirst        BoolWithDefault
+	SniffOverrideMode SniffOverrideMode
+	DNSMode           DNSMode
+	ConnectTimeout    time.Duration
+	Host              string
+	MapTo             string
+	Port              int
+	HttpStatus        int
+	TLS13Only         BoolWithDefault
+	Mode              Mode
 
 	NumRecords   int
 	NumSegments  int
@@ -124,33 +151,33 @@ type Policy struct {
 
 func (p *Policy) UnmarshalJSON(data []byte) error {
 	var tmp struct {
-		PreferSniffed  BoolWithDefault `json:"prefer_sniffed"`
-		ReplyFirst     BoolWithDefault `json:"reply_first"`
-		ConnectTimeout *string         `json:"connect_timeout"`
-		Host           *string         `json:"host"`
-		MapTo          *string         `json:"map_to"`
-		Port           *int            `json:"port"`
-		DNSMode        DNSMode         `json:"dns_mode"`
-		HttpStatus     *int            `json:"http_status"`
-		TLS13Only      BoolWithDefault `json:"tls13_only"`
-		Mode           Mode            `json:"mode"`
-		NumRecords     *int            `json:"num_records"`
-		NumSegments    *int            `json:"num_segs"`
-		OOB            BoolWithDefault `json:"oob"`
-		OOBEx          BoolWithDefault `json:"oob_ex"`
-		ModMinorVer    BoolWithDefault `json:"mod_minor_ver"`
-		SendInterval   *string         `json:"send_interval"`
-		FakeTTL        *int            `json:"fake_ttl"`
-		FakeSleep      *string         `json:"fake_sleep"`
-		MaxTTL         *int            `json:"max_ttl"`
-		Attempts       *int            `json:"attempts"`
-		SingleTimeout  *string         `json:"single_timeout"`
+		SniffOverrideMode SniffOverrideMode `json:"sniff_override"`
+		ReplyFirst        BoolWithDefault   `json:"reply_first"`
+		ConnectTimeout    *string           `json:"connect_timeout"`
+		Host              *string           `json:"host"`
+		MapTo             *string           `json:"map_to"`
+		Port              *int              `json:"port"`
+		DNSMode           DNSMode           `json:"dns_mode"`
+		HttpStatus        *int              `json:"http_status"`
+		TLS13Only         BoolWithDefault   `json:"tls13_only"`
+		Mode              Mode              `json:"mode"`
+		NumRecords        *int              `json:"num_records"`
+		NumSegments       *int              `json:"num_segs"`
+		OOB               BoolWithDefault   `json:"oob"`
+		OOBEx             BoolWithDefault   `json:"oob_ex"`
+		ModMinorVer       BoolWithDefault   `json:"mod_minor_ver"`
+		SendInterval      *string           `json:"send_interval"`
+		FakeTTL           *int              `json:"fake_ttl"`
+		FakeSleep         *string           `json:"fake_sleep"`
+		MaxTTL            *int              `json:"max_ttl"`
+		Attempts          *int              `json:"attempts"`
+		SingleTimeout     *string           `json:"single_timeout"`
 	}
 	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
 	}
 
-	p.PreferSniffed = tmp.PreferSniffed
+	p.SniffOverrideMode = tmp.SniffOverrideMode
 	p.ReplyFirst = tmp.ReplyFirst
 	p.TLS13Only = tmp.TLS13Only
 	p.Mode = tmp.Mode
@@ -350,8 +377,8 @@ func mergePolicies(policies ...*Policy) *Policy {
 		SingleTimeout:  unsetInt,
 	}
 	for _, p := range policies {
-		if merged.PreferSniffed == BoolUnset && p.PreferSniffed != BoolUnset {
-			merged.PreferSniffed = p.PreferSniffed
+		if merged.SniffOverrideMode == SniffOverrideUnset && p.SniffOverrideMode != SniffOverrideUnset {
+			merged.SniffOverrideMode = p.SniffOverrideMode
 		}
 		if merged.ReplyFirst == BoolUnset && p.ReplyFirst != BoolUnset {
 			merged.ReplyFirst = p.ReplyFirst
@@ -505,7 +532,7 @@ func genDoHDialFunc() (func(ctx context.Context, network, address string) (net.C
 	}, nil
 }
 
-func genPolicy(logger *log.Logger, originHost string) (dstHost string, p *Policy, failed bool, blocked bool) {
+func genPolicy(logger *log.Logger, originHost string, returnWhenPolicyNotExists bool) (dstHost string, p *Policy, failed bool, blocked bool) {
 	var err error
 
 	if net.ParseIP(originHost) != nil {
@@ -532,6 +559,8 @@ func genPolicy(logger *log.Logger, originHost string) (dstHost string, p *Policy
 			return "", nil, false, true
 		}
 		p = mergePolicies(domainPolicy, &defaultPolicy)
+	} else if returnWhenPolicyNotExists {
+		return "", nil, true, false
 	} else {
 		p = &defaultPolicy
 	}

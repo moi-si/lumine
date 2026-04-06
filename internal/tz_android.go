@@ -1,4 +1,4 @@
-//go:build android && arm64
+//go:build android
 
 package lumine
 
