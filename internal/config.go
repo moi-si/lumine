@@ -223,7 +223,7 @@ func (c *interceptConn) Write(b []byte) (n int, err error) {
 	c.handled = true
 	var sniPos, sniLen int
 	var hasKeyShare bool
-	_, sniPos, sniLen, hasKeyShare, err = parseClientHello(b)
+	_, sniPos, sniLen, hasKeyShare, _, err = parseClientHello(b)
 	if err != nil {
 		return
 	}

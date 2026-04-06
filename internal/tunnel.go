@@ -207,7 +207,7 @@ func handleTLS(logger *log.Logger, recordLen int,
 		logger.Error(joinString("Read only ", n, " of ", recordLen, " bytes"))
 		return
 	}
-	prtVer, sniPos, sniLen, hasKeyShare, err := parseClientHello(record)
+	prtVer, sniPos, sniLen, hasKeyShare, hasECH, err := parseClientHello(record)
 	if err != nil {
 		logger.Error("Parse record:", err)
 		return
@@ -241,6 +241,10 @@ func handleTLS(logger *log.Logger, recordLen int,
 			logger.Info("Mismatched SNI:", sniStr)
 			switch p.SniffOverrideMode {
 			case SniffOverrideAlways, SniffOverridePolicyExists:
+				if hasECH {
+					logger.Info("Detected ECH in ClientHello; skipping sniff override")
+					break
+				}
 				var returnWhenPolicyNotExists bool
 				if p.SniffOverrideMode == SniffOverridePolicyExists {
 					returnWhenPolicyNotExists = true
@@ -248,9 +252,9 @@ func handleTLS(logger *log.Logger, recordLen int,
 				newDst, sniPolicy, failed, blocked := genPolicy(logger, sniStr, returnWhenPolicyNotExists)
 				if failed {
 					if returnWhenPolicyNotExists {
-						logger.Info("SNI policy not found, fall back to origin")
+						logger.Info("SNI policy not found; falling back to origin")
 					} else {
-						logger.Error("Failed to generate SNI policy, fall back to origin")
+						logger.Error("Failed to generate SNI policy; falling back to origin")
 					}
 				} else {
 					sniPolicyExists := sniPolicy != nil

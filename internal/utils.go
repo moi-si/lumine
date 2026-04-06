@@ -32,78 +32,79 @@ const (
 	tlsHandshakeTypeClientHello = 0x1
 	tlsExtTypeSNI               = 0x0000
 	tlsExtTypeKeyShare          = 0x0033
+	tlsExtTypeECH               = 0x00fe
 )
 
-func parseClientHello(data []byte) (prtVer []byte, sniPos int, sniLen int, hasKeyShare bool, err error) {
+func parseClientHello(data []byte) (prtVer []byte, sniPos int, sniLen int, hasKeyShare, hasECH bool, err error) {
 	if data[0] != tlsRecordTypeHandshake {
-		return nil, -1, 0, false, errors.New("not a TLS handshake record")
+		return nil, -1, 0, false, false, errors.New("not a TLS handshake record")
 	}
 
 	if data[1] != tlsMajorVersion {
-		return nil, -1, 0, false, errors.New("not a standard TLS record")
+		return nil, -1, 0, false, false, errors.New("not a standard TLS record")
 	}
 
 	recordLen := int(binary.BigEndian.Uint16(data[3:5]))
 	if len(data) < tlsRecordHeaderLen+recordLen {
-		return nil, -1, 0, false, errors.New("record length exceeds data size")
+		return nil, -1, 0, false, false, errors.New("record length exceeds data size")
 	}
 	offset := tlsRecordHeaderLen
 
 	if recordLen < tlsHandshakeHeaderLen {
-		return nil, -1, 0, false, errors.New("handshake message too short")
+		return nil, -1, 0, false, false, errors.New("handshake message too short")
 	}
 	if data[offset] != tlsHandshakeTypeClientHello {
-		return nil, -1, 0, false, fmt.Errorf("not a ClientHello handshake (type=%d)", data[offset])
+		return nil, -1, 0, false, false, fmt.Errorf("not a ClientHello handshake (type=%d)", data[offset])
 	}
 	handshakeLen := int(uint32(data[offset+1])<<16 | uint32(data[offset+2])<<8 | uint32(data[offset+3]))
 	if handshakeLen+tlsHandshakeHeaderLen > recordLen {
-		return nil, -1, 0, false, errors.New("handshake length exceeds record length")
+		return nil, -1, 0, false, false, errors.New("handshake length exceeds record length")
 	}
 	offset += tlsHandshakeHeaderLen
 
 	if handshakeLen < 2+32+1 {
-		return nil, -1, 0, false, errors.New("ClientHello too short for mandatory fields")
+		return nil, -1, 0, false, false, errors.New("ClientHello too short for mandatory fields")
 	}
 	prtVer = data[offset : offset+2]
 	offset += 2 + 32
 	if offset >= len(data) {
-		return prtVer, -1, 0, false, errors.New("unexpected end after Random")
+		return prtVer, -1, 0, false, false, errors.New("unexpected end after Random")
 	}
 	sessionIDLen := int(data[offset])
 	offset++
 	if offset+sessionIDLen > len(data) {
-		return prtVer, -1, 0, false, errors.New("session_id length exceeds data")
+		return prtVer, -1, 0, false, false, errors.New("session_id length exceeds data")
 	}
 	offset += sessionIDLen
 
 	if offset+2 > len(data) {
-		return prtVer, -1, 0, false, errors.New("cannot read cipher_suites length")
+		return prtVer, -1, 0, false, false, errors.New("cannot read cipher_suites length")
 	}
 	csLen := int(binary.BigEndian.Uint16(data[offset : offset+2]))
 	offset += 2
 	if offset+csLen > len(data) {
-		return prtVer, -1, 0, false, errors.New("cipher_suites exceed data")
+		return prtVer, -1, 0, false, false, errors.New("cipher_suites exceed data")
 	}
 	offset += csLen
 
 	if offset >= len(data) {
-		return prtVer, -1, 0, false, errors.New("cannot read compression_methods length")
+		return prtVer, -1, 0, false, false, errors.New("cannot read compression_methods length")
 	}
 	compMethodsLen := int(data[offset])
 	offset++
 	if offset+compMethodsLen > len(data) {
-		return prtVer, -1, 0, false, errors.New("compression_methods exceed data")
+		return prtVer, -1, 0, false, false, errors.New("compression_methods exceed data")
 	}
 	offset += compMethodsLen
 
 	// Extensions
 	if offset+2 > len(data) {
-		return prtVer, -1, 0, false, nil
+		return prtVer, -1, 0, false, false, nil
 	}
 	extTotalLen := int(binary.BigEndian.Uint16(data[offset : offset+2]))
 	offset += 2
 	if offset+extTotalLen > len(data) {
-		return prtVer, -1, 0, false, errors.New("extensions length exceeds data")
+		return prtVer, -1, 0, false, false, errors.New("extensions length exceeds data")
 	}
 	extensionsEnd := offset + extTotalLen
 
@@ -116,47 +117,45 @@ func parseClientHello(data []byte) (prtVer []byte, sniPos int, sniLen int, hasKe
 		extDataEnd := extDataStart + extLen
 
 		if extDataEnd > extensionsEnd {
-			return prtVer, sniPos, sniLen, false, errors.New("extension length exceeds extensions block")
+			return prtVer, sniPos, sniLen, hasKeyShare, hasECH, errors.New("extension length exceeds extensions block")
 		}
 
 		if extType == tlsExtTypeKeyShare {
 			hasKeyShare = true
-			if sniPos != -1 {
-				return prtVer, sniPos, sniLen, hasKeyShare, nil
-			}
+		}
+
+		if extType == tlsExtTypeECH {
+			hasECH = true
 		}
 
 		if sniPos == -1 && extType == tlsExtTypeSNI {
 			if extLen < 2 {
-				return prtVer, sniPos, sniLen, hasKeyShare, errors.New("malformed SNI extension (too short for list length)")
+				return prtVer, sniPos, sniLen, hasKeyShare, hasECH, errors.New("malformed SNI extension (too short for list length)")
 			}
 			listLen := int(binary.BigEndian.Uint16(data[extDataStart : extDataStart+2]))
 			if listLen+2 != extLen {
-				return prtVer, sniPos, sniLen, hasKeyShare, errors.New("SNI list length field mismatch")
+				return prtVer, sniPos, sniLen, hasKeyShare, hasECH, errors.New("SNI list length field mismatch")
 			}
 			cursor := extDataStart + 2
 			if cursor+3 > extDataEnd {
-				return prtVer, sniPos, sniLen, hasKeyShare, errors.New("SNI entry too short")
+				return prtVer, sniPos, sniLen, hasKeyShare, hasECH, errors.New("SNI entry too short")
 			}
 			nameType := data[cursor]
 			if nameType != 0 {
-				return prtVer, sniPos, sniLen, hasKeyShare, errors.New("unsupported SNI name type")
+				return prtVer, sniPos, sniLen, hasKeyShare, hasECH, errors.New("unsupported SNI name type")
 			}
 			nameLen := int(binary.BigEndian.Uint16(data[cursor+1 : cursor+3]))
 			nameStart := cursor + 3
 			nameEnd := nameStart + nameLen
 			if nameEnd > extDataEnd {
-				return prtVer, sniPos, sniLen, hasKeyShare, errors.New("SNI name length exceeds extension")
+				return prtVer, sniPos, sniLen, hasKeyShare, hasECH, errors.New("SNI name length exceeds extension")
 			}
 			sniPos = nameStart
 			sniLen = nameLen
-			if hasKeyShare {
-				return prtVer, sniPos, sniLen, hasKeyShare, nil
-			}
 		}
 		offset = extDataEnd
 	}
-	return prtVer, sniPos, sniLen, hasKeyShare, nil
+	return prtVer, sniPos, sniLen, hasKeyShare, hasECH, nil
 }
 
 func expandPattern(s string) []string {
