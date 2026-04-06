@@ -100,7 +100,7 @@ func handleConnect(logger *log.Logger, w http.ResponseWriter, req *http.Request)
 	logger.Info("Policy:", policy)
 
 	if policy.Mode == ModeBlock {
-		http.Error(w, "", http.StatusForbidden)
+		http.Error(w, status403, http.StatusForbidden)
 		return
 	}
 
