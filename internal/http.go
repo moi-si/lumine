@@ -65,7 +65,7 @@ func httpHandler(w http.ResponseWriter, req *http.Request) {
 
 	if !req.URL.IsAbs() {
 		logger.Error("URI not fully qualified")
-		http.Error(w, "403 Forbidden", http.StatusForbidden)
+		http.Error(w, status403, http.StatusForbidden)
 		return
 	}
 

@@ -182,11 +182,7 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 	}
 	if blocked {
 		logger.Info("Connection blocked:", originHost)
-		if policy != nil && policy.ReplyFirst == BoolTrue {
-			sendReply(logger, cliConn, socks5ReplySuccess)
-		} else {
-			sendReply(logger, cliConn, socks5ReplyConnNotAllowed)
-		}
+		sendReply(logger, cliConn, socks5ReplyConnNotAllowed)
 		return
 	}
 

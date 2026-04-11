@@ -278,7 +278,7 @@ func handleTLS(logger *log.Logger, recordLen int,
 						target = newTarget
 						logger.Info("Target has been changed to", sniStr)
 					} else {
-						logger.Error(joinString("Connection to ", newTarget, " failed: ", err, ", fall back to origin"))
+						logger.Error(joinString("Connection to ", newTarget, " failed: ", err, "; falling back to origin"))
 					}
 				}
 			}
