@@ -98,7 +98,7 @@ func sendRecords(conn net.Conn, clientHello []byte,
 		return nil
 	}
 
-	merged := make([]byte, 0, records*5+len(clientHello))
+	merged := make([]byte, 0, records*tlsRecordHeaderLen+len(clientHello))
 	for _, c := range chunks {
 		merged = append(merged, c...)
 	}
