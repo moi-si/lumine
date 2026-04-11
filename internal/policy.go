@@ -532,7 +532,7 @@ func genDoHDialFunc() (func(ctx context.Context, network, address string) (net.C
 	}, nil
 }
 
-func genPolicy(logger *log.Logger, originHost string, isIP, returnWhenPolicyNotExists bool) (dstHost string, p *Policy, failed, blocked, policyNotExists bool) {
+func genPolicy(logger *log.Logger, originHost string, isIP, returnWhenDomainNotFound bool) (dstHost string, p *Policy, failed, blocked, domainNotFound bool) {
 	var err error
 
 	if !isIP {
@@ -563,8 +563,6 @@ func genPolicy(logger *log.Logger, originHost string, isIP, returnWhenPolicyNotE
 			return "", nil, false, true, false
 		}
 		p = mergePolicies(domainPolicy, &defaultPolicy)
-	} else if returnWhenPolicyNotExists {
-		return "", nil, false, false, true
 	} else {
 		p = &defaultPolicy
 	}
@@ -580,6 +578,9 @@ func genPolicy(logger *log.Logger, originHost string, isIP, returnWhenPolicyNotE
 		selectedHost, foundInHosts = hostsMatcher.Find(originHost)
 		switch selectedHost {
 		case "", unsetString:
+			if returnWhenDomainNotFound {
+				return "", nil, false, false, true
+			}
 			var cached bool
 			dstHost, cached, err = dnsResolve(originHost, p.DNSMode)
 			if err != nil {
