@@ -100,7 +100,7 @@ func sendWithNoise(
 	}
 	iov := unix.Iovec{
 		Base: &data[0],
-		Len:  toUint(len(fakeData)),
+		Len:  itou(len(fakeData)),
 	}
 	if _, err := unix.Vmsplice(pipeW, []unix.Iovec{iov}, unix.SPLICE_F_GIFT); err != nil {
 		return wrap("vmsplice", err)
@@ -112,8 +112,8 @@ func sendWithNoise(
 		toWrite := len(fakeData)
 		rawWriteErr = rawConn.Write(func(fd uintptr) (done bool) {
 			for toWrite > 0 {
-				var n int64
-				n, innerErr = splice(pipeR, nil, int(fd), nil, toWrite, unix.SPLICE_F_NONBLOCK)
+				n, spliceErr := unix.Splice(pipeR, nil, int(fd), nil, toWrite, unix.SPLICE_F_NONBLOCK)
+				innerErr = spliceErr
 				if innerErr != nil {
 					if innerErr == unix.EINTR {
 						continue
