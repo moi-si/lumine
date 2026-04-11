@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -158,7 +157,7 @@ func doDNSResolve(domain string, dnsMode DNSMode) (string, error) {
 			msg.SetQuestion(domain+".", dns.TypeAAAA)
 			resp, err2 := dnsExchange(msg)
 			if err2 != nil {
-				return "", fmt.Errorf("dns exchange: %w; %w", err, err2)
+				return "", wrap("dns exchange", errors.Join(err, err2))
 			}
 			if resp.Rcode != dns.RcodeSuccess {
 				return "", errors.New("bad rcode: " + dns.RcodeToString[resp.Rcode])
@@ -174,7 +173,7 @@ func doDNSResolve(domain string, dnsMode DNSMode) (string, error) {
 			msg.SetQuestion(domain+".", dns.TypeA)
 			resp, err2 := dnsExchange(msg)
 			if err2 != nil {
-				return "", fmt.Errorf("dns exchange: %w; %w", err, err2)
+				return "", wrap("dns exchange", errors.Join(err, err2))
 			}
 			if resp.Rcode != dns.RcodeSuccess {
 				return "", errors.New("bad rcode: " + dns.RcodeToString[resp.Rcode])
