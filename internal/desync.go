@@ -125,7 +125,7 @@ func getMinimalReachableTTL(addr string, ipv6 bool, maxTTL, attempts int, dialTi
 	}
 
 	var err error
-	found := -1
+	found := unsetInt
 	if ttlSingleflight != nil {
 		var v any
 		v, err, _ = ttlSingleflight.Do(addr, func() (any, error) {
@@ -141,26 +141,26 @@ func getMinimalReachableTTL(addr string, ipv6 bool, maxTTL, attempts int, dialTi
 }
 
 func getFakeTTL(logger *log.Logger, p *Policy, addr string, ipv6 bool) (ttl int, err error) {
-	if p.FakeTTL == 0 || p.FakeTTL == -1 {
+	if p.FakeTTL == 0 || p.FakeTTL == unsetInt {
 		var cached bool
 		ttl, cached, err = getMinimalReachableTTL(addr, ipv6, p.MaxTTL, p.Attempts, p.SingleTimeout)
 		if err != nil {
-			return -1, wrap("detect minimum reachable TTL", err)
+			return unsetInt, wrap("detect minimum reachable TTL", err)
 		}
-		if ttl == -1 {
-			return -1, errors.New("reachable TTL not found")
+		if ttl == unsetInt {
+			return unsetInt, errors.New("reachable TTL not found")
 		}
 		if calcTTL != nil {
 			ttl, err = calcTTL(ttl)
 			if err != nil {
-				return -1, wrap("calculate fake TTL", err)
+				return unsetInt, wrap("calculate fake TTL", err)
 			}
 		} else {
 			ttl -= 1
 		}
 		if logger != nil {
 			if cached {
-				logger.Info("Fake TTL(cached):", formatInt(ttl))
+				logger.Info("Fake TTL (cached):", formatInt(ttl))
 			} else {
 				logger.Info("Fake TTL:", ttl)
 			}

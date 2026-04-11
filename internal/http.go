@@ -80,7 +80,7 @@ func handleConnect(logger *log.Logger, w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	originHost, dstPort, err := net.SplitHostPort(oldDest)
+	originHost, originPort, err := net.SplitHostPort(oldDest)
 	if err != nil {
 		logger.Error("Split", oldDest+":", err)
 		return
@@ -104,7 +104,8 @@ func handleConnect(logger *log.Logger, w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	if policy.Port != 0 && policy.Port != -1 {
+	dstPort := originPort
+	if policy.Port != 0 && policy.Port != unsetInt {
 		dstPort = formatInt(policy.Port)
 	}
 
@@ -155,7 +156,7 @@ func handleConnect(logger *log.Logger, w http.ResponseWriter, req *http.Request)
 	}
 
 	closeHere = false
-	handleTunnel(policy, dstConn, cliConn, logger, oldDest, dest, originHost, dstPort)
+	handleTunnel(policy, dstConn, cliConn, logger, oldDest, dest, originHost, originPort)
 }
 
 func forwardHTTPRequest(logger *log.Logger, w http.ResponseWriter, originReq *http.Request) {
@@ -190,7 +191,7 @@ func forwardHTTPRequest(logger *log.Logger, w http.ResponseWriter, originReq *ht
 		return
 	}
 
-	if p.HttpStatus != 0 && p.HttpStatus != -1 {
+	if p.HttpStatus != 0 && p.HttpStatus != unsetInt {
 		if p.HttpStatus == 301 || p.HttpStatus == 302 {
 			scheme := originReq.URL.Scheme
 			if scheme == "" {
@@ -205,7 +206,7 @@ func forwardHTTPRequest(logger *log.Logger, w http.ResponseWriter, originReq *ht
 	}
 
 	dstPort := port
-	if p.Port != 0 && p.Port != -1 {
+	if p.Port != 0 && p.Port != unsetInt {
 		dstPort = formatInt(p.Port)
 	}
 

@@ -21,7 +21,7 @@ const (
 
 func handleTunnel(
 	p *Policy, dstConn, cliConn net.Conn, logger *log.Logger,
-	oldTarget, target, originHost, portStr string,
+	oldTarget, target, originHost, originPort string,
 ) {
 	var (
 		err       error
@@ -71,7 +71,7 @@ func handleTunnel(
 			payloadLen := 5 + int(binary.BigEndian.Uint16(peekBytes[3:5]))
 			var ok bool
 			if dstConn, ok = handleTLS(logger, payloadLen,
-				p, originHost, oldTarget, target, portStr,
+				p, originHost, oldTarget, target, originPort,
 				br, cliConn, dstConn); !ok {
 				return
 			}
@@ -96,6 +96,7 @@ func handleTunnel(
 		cliReader = br
 	}
 
+	logger.Info("Start forwarding")
 	srcConnTCP, dstConnTCP := cliConn.(*net.TCPConn), dstConn.(*net.TCPConn)
 	done := make(chan struct{})
 	go func() {
@@ -106,7 +107,7 @@ func handleTunnel(
 				logger.Debug("Close dest write:", err)
 				once.Do(closeBoth)
 			}
-		} else if !isUseOfClosedConn(err) {
+		} else if !errors.Is(err, net.ErrClosed) {
 			logger.Error("Forward", originHost+"->"+cliConn.RemoteAddr().String()+":", err)
 			once.Do(closeBoth)
 		}
@@ -119,7 +120,7 @@ func handleTunnel(
 			logger.Debug("Close client write:", err)
 			once.Do(closeBoth)
 		}
-	} else if !isUseOfClosedConn(err) {
+	} else if !errors.Is(err, net.ErrClosed) {
 		logger.Error("Forward", cliConn.RemoteAddr().String()+"->"+originHost+":", err)
 		once.Do(closeBoth)
 	}
@@ -197,7 +198,7 @@ func handleHTTP(
 }
 
 func handleTLS(logger *log.Logger, recordLen int,
-	p *Policy, originHost, oldTarget, target, portStr string,
+	p *Policy, originHost, oldTarget, target, originPort string,
 	br *bufio.Reader, cliConn, dstConn net.Conn) (newConn net.Conn, ok bool) {
 	record := make([]byte, recordLen)
 	if n, err := br.Read(record); err != nil {
@@ -264,9 +265,9 @@ func handleTLS(logger *log.Logger, recordLen int,
 					}
 					logger.Info("New policy:", sniPolicy)
 					if sniPolicy.Port != 0 && sniPolicy.Port != -1 {
-						portStr = formatInt(sniPolicy.Port)
+						originPort = formatInt(sniPolicy.Port)
 					}
-					newTarget := net.JoinHostPort(newDst, portStr)
+					newTarget := net.JoinHostPort(newDst, originPort)
 					newConn, err := net.DialTimeout("tcp", newTarget, sniPolicy.ConnectTimeout)
 					if err == nil {
 						if dstConn != nil {

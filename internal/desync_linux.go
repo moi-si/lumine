@@ -26,7 +26,7 @@ func detectMinimalReachableTTL(
 	dialer := net.Dialer{Timeout: dialTimeout}
 
 	low, high := 1, maxTTL
-	found := -1
+	found := unsetInt
 
 	for low <= high {
 		mid := (low + high) / 2
@@ -51,7 +51,7 @@ func detectMinimalReachableTTL(
 				break
 			}
 			if netErr := err.(*net.OpError); !netErr.Timeout() {
-				return -1, wrap("dial "+formatInt(mid), err)
+				return unsetInt, wrap("dial "+formatInt(mid), err)
 			}
 		}
 		if ok {
@@ -62,7 +62,7 @@ func detectMinimalReachableTTL(
 		}
 	}
 
-	if ttlCache != nil && found != -1 {
+	if ttlCache != nil && found != unsetInt {
 		ttlCache.AddWithLifetime(addr, found, ttlCacheTTL)
 	}
 	return found, nil

@@ -25,7 +25,7 @@ func loadTTLRules(string) error {
 }
 
 func getFakeTTL(*log.Logger, *Policy, string, bool) (ttl int, err error) {
-	return -1, errTTLDNotSupported
+	return unsetInt, errTTLDNotSupported
 }
 
 func desyncSend(net.Conn, bool, []byte, int, int, int, time.Duration) error {

@@ -196,15 +196,15 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 		return
 	}
 	dstPort := binary.BigEndian.Uint16(portBytes)
-	oldTarget := net.JoinHostPort(originHost, formatUint(dstPort))
+	originPort := formatUint(dstPort)
+	oldTarget := net.JoinHostPort(originHost, originPort)
 
 	logger.Info("CONNECT", oldTarget)
 	logger.Info("Policy:", policy)
-	if policy.Port != 0 && policy.Port != -1 {
+	if policy.Port != 0 && policy.Port != unsetInt {
 		dstPort = uint16(policy.Port)
 	}
-	portStr := formatUint(dstPort)
-	target := net.JoinHostPort(dstHost, portStr)
+	target := net.JoinHostPort(dstHost,  formatUint(dstPort))
 
 	if !(policy.ReplyFirst == BoolTrue) {
 		dstConn, err = net.DialTimeout("tcp", target, policy.ConnectTimeout)
@@ -219,5 +219,5 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 	}
 
 	closeHere = false
-	handleTunnel(policy, dstConn, cliConn, logger, oldTarget, target, originHost, portStr)
+	handleTunnel(policy, dstConn, cliConn, logger, oldTarget, target, originHost, originPort)
 }
