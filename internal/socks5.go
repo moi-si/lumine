@@ -200,7 +200,7 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 	if policy.Port != 0 && policy.Port != unsetInt {
 		dstPort = uint16(policy.Port)
 	}
-	target := net.JoinHostPort(dstHost,  formatUint(dstPort))
+	target := net.JoinHostPort(dstHost, formatUint(dstPort))
 
 	if !(policy.ReplyFirst == BoolTrue) {
 		dstConn, err = net.DialTimeout("tcp", target, policy.ConnectTimeout)
