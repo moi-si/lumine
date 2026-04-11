@@ -182,8 +182,9 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 			logger.Error("Read domain length:", err)
 			return
 		}
-		if lenByte[0] >= 253 {
+		if lenByte[0] > 253 {
 			logger.Error("Domain length too long:", lenByte[0])
+			return
 		}
 		domainBytes, err := readN(cliConn, buf[:lenByte[0]])
 		if err != nil {
@@ -191,7 +192,7 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 		}
 		originHost = string(domainBytes)
 		var failed bool
-		dstHost, policy, failed, blocked = genPolicy(logger, originHost, false)
+		dstHost, policy, failed, blocked, _ = genPolicy(logger, originHost, false)
 		if failed {
 			sendReply(logger, cliConn, socks5ReplyServerFailure)
 			return

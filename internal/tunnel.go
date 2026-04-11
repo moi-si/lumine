@@ -245,17 +245,12 @@ func handleTLS(logger *log.Logger, recordLen int,
 					logger.Info("Detected ECH in ClientHello; skipping sniff override")
 					break
 				}
-				var returnWhenPolicyNotExists bool
-				if p.SniffOverrideMode == SniffOverridePolicyExists {
-					returnWhenPolicyNotExists = true
-				}
-				newDst, sniPolicy, failed, blocked := genPolicy(logger, sniStr, returnWhenPolicyNotExists)
+				returnWhenPolicyNotExists := p.SniffOverrideMode == SniffOverridePolicyExists
+				newDst, sniPolicy, failed, blocked, policyNotExists := genPolicy(logger, sniStr, returnWhenPolicyNotExists)
 				if failed {
-					if returnWhenPolicyNotExists {
-						logger.Info("SNI policy not found; falling back to origin")
-					} else {
-						logger.Error("Failed to generate SNI policy; falling back to origin")
-					}
+					logger.Error("Failed to generate SNI policy; falling back to origin")
+				} else if policyNotExists {
+					logger.Info("SNI policy not found; falling back to origin")
 				} else {
 					sniPolicyExists := sniPolicy != nil
 					if blocked || (sniPolicyExists && sniPolicy.Mode == ModeBlock) {
@@ -296,7 +291,7 @@ func handleTLS(logger *log.Logger, recordLen int,
 			}
 		}
 		switch p.Mode {
-		case ModeDirect:
+		case ModeDirect, ModeRaw:
 			if _, err = dstConn.Write(record); err != nil {
 				logger.Error("Send ClientHello:", err)
 				return

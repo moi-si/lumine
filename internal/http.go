@@ -86,7 +86,7 @@ func handleConnect(logger *log.Logger, w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	dstHost, policy, fail, blocked := genPolicy(logger, originHost, false)
+	dstHost, policy, fail, blocked, _ := genPolicy(logger, originHost, false)
 	if fail {
 		http.Error(w, status500, http.StatusInternalServerError)
 		return
@@ -179,7 +179,7 @@ func forwardHTTPRequest(logger *log.Logger, w http.ResponseWriter, originReq *ht
 		}
 	}
 
-	dstHost, p, failed, blocked := genPolicy(logger, originHost, false)
+	dstHost, p, failed, blocked, _ := genPolicy(logger, originHost, false)
 	if failed {
 		http.Error(w, status500, http.StatusInternalServerError)
 		return

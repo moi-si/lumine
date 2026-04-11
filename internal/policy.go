@@ -532,7 +532,7 @@ func genDoHDialFunc() (func(ctx context.Context, network, address string) (net.C
 	}, nil
 }
 
-func genPolicy(logger *log.Logger, originHost string, returnWhenPolicyNotExists bool) (dstHost string, p *Policy, failed bool, blocked bool) {
+func genPolicy(logger *log.Logger, originHost string, returnWhenPolicyNotExists bool) (dstHost string, p *Policy, failed, blocked, policyNotExists bool) {
 	var err error
 
 	if net.ParseIP(originHost) != nil {
@@ -540,7 +540,7 @@ func genPolicy(logger *log.Logger, originHost string, returnWhenPolicyNotExists 
 		dstHost, ipPolicy, err = ipRedirect(logger, originHost)
 		if err != nil {
 			logger.Error("IP redirect:", err)
-			return "", nil, true, false
+			return "", nil, true, false, false
 		}
 		if ipPolicy == nil {
 			p = &defaultPolicy
@@ -548,7 +548,7 @@ func genPolicy(logger *log.Logger, originHost string, returnWhenPolicyNotExists 
 			p = mergePolicies(ipPolicy, &defaultPolicy)
 		}
 		if p.Mode == ModeBlock {
-			return "", nil, false, true
+			return "", nil, false, true, false
 		}
 		return
 	}
@@ -556,11 +556,11 @@ func genPolicy(logger *log.Logger, originHost string, returnWhenPolicyNotExists 
 	domainPolicy, foundDomainPolicy := domainMatcher.Find(originHost)
 	if foundDomainPolicy {
 		if domainPolicy.Mode == ModeBlock {
-			return "", nil, false, true
+			return "", nil, false, true, false
 		}
 		p = mergePolicies(domainPolicy, &defaultPolicy)
 	} else if returnWhenPolicyNotExists {
-		return "", nil, true, false
+		return "", nil, false, false, true
 	} else {
 		p = &defaultPolicy
 	}
@@ -580,7 +580,7 @@ func genPolicy(logger *log.Logger, originHost string, returnWhenPolicyNotExists 
 			dstHost, cached, err = dnsResolve(originHost, p.DNSMode)
 			if err != nil {
 				logger.Error("Resolve", originHost+":", err)
-				return "", nil, true, false
+				return "", nil, true, false, false
 			}
 			var logPrefix string
 			if cached {
@@ -613,7 +613,7 @@ func genPolicy(logger *log.Logger, originHost string, returnWhenPolicyNotExists 
 		case strings.HasPrefix(selectedHost, ipPoolTagPrefix):
 			if dstHost, err = getFromIPPool(selectedHost[1:]); err != nil {
 				logger.Error(err)
-				return "", nil, true, false
+				return "", nil, true, false, false
 			}
 			logger.Info(logPrefix, selectedHost, "->", dstHost)
 		case strings.HasPrefix(selectedHost, resolvePrefix):
@@ -622,7 +622,7 @@ func genPolicy(logger *log.Logger, originHost string, returnWhenPolicyNotExists 
 			dstHost, cached, err = dnsResolve(selectedHost, p.DNSMode)
 			if err != nil {
 				logger.Error("Resolve", selectedHost+":", err)
-				return "", nil, true, false
+				return "", nil, true, false, false
 			}
 			var logPrefix string
 			if cached {
@@ -642,7 +642,7 @@ func genPolicy(logger *log.Logger, originHost string, returnWhenPolicyNotExists 
 		dstHost, ipPolicy, err = ipRedirect(logger, dstHost)
 		if err != nil {
 			logger.Info("IP redirect:", err)
-			return "", nil, true, false
+			return "", nil, true, false, false
 		}
 		if ipPolicy != nil {
 			if foundDomainPolicy {
@@ -651,7 +651,7 @@ func genPolicy(logger *log.Logger, originHost string, returnWhenPolicyNotExists 
 				p = mergePolicies(ipPolicy, &defaultPolicy)
 			}
 			if p.Mode == ModeBlock {
-				return "", nil, false, true
+				return "", nil, false, true, false
 			}
 		}
 	}
