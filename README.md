@@ -20,7 +20,7 @@ go build
 
 ## Document
 
-[https://github.com/moi-si/lumine/wiki/Document](https://github.com/moi-si/lumine/wiki/Document)
+[https://github.com/moi-si/lumine/wiki/Documentation](https://github.com/moi-si/lumine/wiki/Documentation)
 
 # Acknowledgements
 
