@@ -246,7 +246,7 @@ func handleTLS(logger *log.Logger, recordLen int,
 					break
 				}
 				returnWhenPolicyNotExists := p.SniffOverrideMode == SniffOverridePolicyExists
-				newDst, sniPolicy, failed, blocked, policyNotExists := genPolicy(logger, sniStr, returnWhenPolicyNotExists)
+				newDst, sniPolicy, failed, blocked, policyNotExists := genPolicy(logger, sniStr, false, returnWhenPolicyNotExists)
 				if failed {
 					logger.Error("Failed to generate SNI policy; falling back to origin")
 				} else if policyNotExists {

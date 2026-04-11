@@ -135,7 +135,7 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 	var (
 		originHost, dstHost string
 		policy              *Policy
-		blocked             bool
+		isIP                bool
 	)
 	switch header[3] {
 	case 0x1: // IPv4 address
@@ -145,18 +145,7 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 			return
 		}
 		originHost = net.IP(ipBytes).String()
-		var ipPolicy *Policy
-		dstHost, ipPolicy, err = ipRedirect(logger, originHost)
-		if err != nil {
-			logger.Error("IP redirect:", err)
-			sendReply(logger, cliConn, socks5ReplyServerFailure)
-			return
-		}
-		if ipPolicy == nil {
-			policy = &defaultPolicy
-		} else {
-			policy = mergePolicies(ipPolicy, &defaultPolicy)
-		}
+		isIP = true
 	case 0x4: // IPv6 address
 		ipBytes, err := readN(cliConn, buf[:16])
 		if err != nil {
@@ -164,18 +153,7 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 			return
 		}
 		originHost = net.IP(ipBytes).String()
-		var ipPolicy *Policy
-		dstHost, ipPolicy, err = ipRedirect(logger, originHost)
-		if err != nil {
-			logger.Error("IP redirect:", err)
-			sendReply(logger, cliConn, socks5ReplyServerFailure)
-			return
-		}
-		if ipPolicy == nil {
-			policy = &defaultPolicy
-		} else {
-			policy = mergePolicies(ipPolicy, &defaultPolicy)
-		}
+		isIP = true
 	case 0x3: // Domain name
 		lenByte, err := readN(cliConn, buf[:1])
 		if err != nil {
@@ -191,28 +169,27 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 			logger.Error("Read domain address:", err)
 		}
 		originHost = string(domainBytes)
-		var failed bool
-		dstHost, policy, failed, blocked, _ = genPolicy(logger, originHost, false)
-		if failed {
-			sendReply(logger, cliConn, socks5ReplyServerFailure)
-			return
-		}
 	default:
 		logger.Error("Invalid atyp:", byteToString(header[3]))
 		sendReply(logger, cliConn, socks5ReplyAtypNotSupported)
 		return
 	}
 
-	policyExists := policy != nil
-	if blocked || (policyExists && policy.Mode == ModeBlock) {
+	dstHost, policy, failed, blocked, _ := genPolicy(logger, originHost, isIP, false)
+	if failed {
+		sendReply(logger, cliConn, socks5ReplyServerFailure)
+		return
+	}
+	if blocked {
 		logger.Info("Connection blocked:", originHost)
-		if policyExists && policy.ReplyFirst == BoolTrue {
+		if policy != nil && policy.ReplyFirst == BoolTrue {
 			sendReply(logger, cliConn, socks5ReplySuccess)
 		} else {
 			sendReply(logger, cliConn, socks5ReplyConnNotAllowed)
 		}
 		return
 	}
+
 	portBytes, err := readN(cliConn, buf[:2])
 	if err != nil {
 		logger.Error("Read port:", err)

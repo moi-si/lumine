@@ -21,7 +21,7 @@ const (
 type SniffOverrideMode uint8
 
 const (
-	SniffOverrideUnset = iota
+	SniffOverrideUnset SniffOverrideMode = iota
 	SniffOverrideOff
 	SniffOverrideAlways
 	SniffOverridePolicyExists
@@ -481,9 +481,9 @@ func genDoHDialFunc() (func(ctx context.Context, network, address string) (net.C
 		} else {
 			dohConnPolicy = &defaultPolicy
 		}
-		disableRedirect := strings.HasPrefix(dohConnPolicy.Host, noRedirectPrefix)
+		noRedirect := strings.HasPrefix(dohConnPolicy.Host, noRedirectPrefix)
 		policyHost := dohConnPolicy.Host
-		if disableRedirect {
+		if noRedirect {
 			policyHost = policyHost[1:]
 		}
 		var selectedHost string
@@ -491,8 +491,8 @@ func genDoHDialFunc() (func(ctx context.Context, network, address string) (net.C
 			var foundInHosts bool
 			selectedHost, foundInHosts = hostsMatcher.Find(host)
 			if foundInHosts {
-				disableRedirect = strings.HasPrefix(selectedHost, noRedirectPrefix)
-				if disableRedirect {
+				noRedirect = strings.HasPrefix(selectedHost, noRedirectPrefix)
+				if noRedirect {
 					selectedHost = selectedHost[1:]
 				}
 			}
@@ -532,10 +532,14 @@ func genDoHDialFunc() (func(ctx context.Context, network, address string) (net.C
 	}, nil
 }
 
-func genPolicy(logger *log.Logger, originHost string, returnWhenPolicyNotExists bool) (dstHost string, p *Policy, failed, blocked, policyNotExists bool) {
+func genPolicy(logger *log.Logger, originHost string, isIP, returnWhenPolicyNotExists bool) (dstHost string, p *Policy, failed, blocked, policyNotExists bool) {
 	var err error
 
-	if net.ParseIP(originHost) != nil {
+	if !isIP {
+		isIP = net.ParseIP(originHost) != nil
+	}
+
+	if isIP {
 		var ipPolicy *Policy
 		dstHost, ipPolicy, err = ipRedirect(logger, originHost)
 		if err != nil {
@@ -565,9 +569,9 @@ func genPolicy(logger *log.Logger, originHost string, returnWhenPolicyNotExists 
 		p = &defaultPolicy
 	}
 
-	disableRedirect := strings.HasPrefix(p.Host, noRedirectPrefix)
+	noRedirect := strings.HasPrefix(p.Host, noRedirectPrefix)
 	policyHost := p.Host
-	if disableRedirect {
+	if noRedirect {
 		policyHost = policyHost[1:]
 	}
 	var selectedHost string
@@ -590,8 +594,8 @@ func genPolicy(logger *log.Logger, originHost string, returnWhenPolicyNotExists 
 			}
 			logger.Info(logPrefix, originHost, "->", dstHost)
 		default:
-			disableRedirect = strings.HasPrefix(selectedHost, noRedirectPrefix)
-			if disableRedirect {
+			noRedirect = strings.HasPrefix(selectedHost, noRedirectPrefix)
+			if noRedirect {
 				selectedHost = selectedHost[1:]
 			}
 		}
@@ -637,7 +641,7 @@ func genPolicy(logger *log.Logger, originHost string, returnWhenPolicyNotExists 
 		}
 	}
 
-	if !disableRedirect {
+	if !noRedirect {
 		var ipPolicy *Policy
 		dstHost, ipPolicy, err = ipRedirect(logger, dstHost)
 		if err != nil {
