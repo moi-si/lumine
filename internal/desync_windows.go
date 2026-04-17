@@ -203,7 +203,7 @@ func sendWithNoise(
 
 func desyncSend(
 	conn net.Conn, ipv6 bool,
-	record []byte, sniPos, sniLen, fakeTTL int, fakeSleep time.Duration,
+	record []byte, sniStart, sniLen, fakeTTL int, fakeSleep time.Duration,
 ) error {
 	rawConn, err := getTCPRawConn(conn)
 	if err != nil {
@@ -235,14 +235,9 @@ func desyncSend(
 		fakeSleep = minInterval
 	}
 
-	cut, found := findLastDot(record, sniPos, sniLen)
-	var fakeData []byte
-	if found {
-		fakeData = make([]byte, cut)
-		copy(fakeData, record[:sniPos])
-	} else {
-		fakeData = record[:cut]
-	}
+	cut := findLastDotOrMidPos(record, sniStart, sniLen)
+	fakeData := make([]byte, cut)
+	copy(fakeData, record[:sniStart])
 
 	if err = sendWithNoise(
 		sockHandle,

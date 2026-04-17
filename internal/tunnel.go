@@ -208,7 +208,7 @@ func handleTLS(logger *log.Logger, recordLen int,
 		logger.Error(joinString("Read only ", n, " of ", recordLen, " bytes"))
 		return
 	}
-	prtVer, sniPos, sniLen, hasKeyShare, hasECH, err := parseClientHello(record)
+	prtVer, sniStart, sniLen, hasKeyShare, hasECH, err := parseClientHello(record)
 	if err != nil {
 		logger.Error("Parse record:", err)
 		return
@@ -222,7 +222,7 @@ func handleTLS(logger *log.Logger, recordLen int,
 		sendTLSAlert(logger, cliConn, prtVer, tlsAlertProtocolVersion, tlsAlertLevelFatal)
 		return
 	}
-	if sniPos <= 0 || sniLen <= 0 {
+	if sniStart <= 0 || sniLen <= 0 {
 		logger.Info("SNI not found")
 		if dstConn == nil {
 			dstConn, err = net.DialTimeout("tcp", target, p.ConnectTimeout)
@@ -237,7 +237,7 @@ func handleTLS(logger *log.Logger, recordLen int,
 		}
 		logger.Info("Sent ClientHello directly")
 	} else {
-		sniStr := string(record[sniPos : sniPos+sniLen])
+		sniStr := string(record[sniStart : sniStart+sniLen])
 		if originHost != sniStr {
 			logger.Info("Mismatched SNI:", sniStr)
 			switch p.SniffOverrideMode {
@@ -299,7 +299,7 @@ func handleTLS(logger *log.Logger, recordLen int,
 			}
 			logger.Info("Sent ClientHello directly")
 		case ModeTLSRF:
-			err = sendRecords(dstConn, record, sniPos, sniLen,
+			err = sendRecords(dstConn, record, sniStart, sniLen,
 				p.NumRecords, p.NumSegments,
 				p.OOB == BoolTrue, p.OOBEx == BoolTrue,
 				p.ModMinorVer == BoolTrue, p.SendInterval)
@@ -317,7 +317,7 @@ func handleTLS(logger *log.Logger, recordLen int,
 			}
 			if err = desyncSend(
 				dstConn, ipv6, record,
-				sniPos, sniLen, ttl, p.FakeSleep,
+				sniStart, sniLen, ttl, p.FakeSleep,
 			); err != nil {
 				logger.Error("TTL desync:", err)
 				return

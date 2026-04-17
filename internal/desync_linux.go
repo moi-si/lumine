@@ -147,7 +147,8 @@ func sendWithNoise(
 
 func desyncSend(
 	conn net.Conn, ipv6 bool,
-	firstPacket []byte, sniPos, sniLen, fakeTTL int, fakeSleep time.Duration,
+	record []byte, sniStart, sniLen int,
+	fakeTTL int, fakeSleep time.Duration,
 ) error {
 	rawConn, err := getTCPRawConn(conn)
 	if err != nil {
@@ -178,19 +179,14 @@ func desyncSend(
 		fakeSleep = minInterval
 	}
 
-	cut, found := findLastDot(firstPacket, sniPos, sniLen)
-	var fakeData []byte
-	if found {
-		fakeData = make([]byte, cut)
-		copy(fakeData, firstPacket[:sniPos])
-	} else {
-		fakeData = firstPacket[:cut]
-	}
+	cut := findLastDotOrMidPos(record, sniStart, sniLen)
+	fakeData := make([]byte, cut)
+	copy(fakeData, record[:sniStart])
 
 	if err = sendWithNoise(
 		fd, rawConn,
 		fakeData,
-		firstPacket[:cut],
+		record[:cut],
 		fakeTTL,
 		defaultTTL,
 		level, opt,
@@ -198,7 +194,7 @@ func desyncSend(
 	); err != nil {
 		return wrap("send data with noise", err)
 	}
-	if _, err = conn.Write(firstPacket[cut:]); err != nil {
+	if _, err = conn.Write(record[cut:]); err != nil {
 		return wrap("send remaining data", err)
 	}
 	return nil

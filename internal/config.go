@@ -221,16 +221,16 @@ func (c *interceptConn) Write(b []byte) (n int, err error) {
 		return c.Conn.Write(b)
 	}
 	c.handled = true
-	var sniPos, sniLen int
+	var sniStart, sniLen int
 	var hasKeyShare bool
-	_, sniPos, sniLen, hasKeyShare, _, err = parseClientHello(b)
+	_, sniStart, sniLen, hasKeyShare, _, err = parseClientHello(b)
 	if err != nil {
 		return
 	}
 	if dohConnPolicy.TLS13Only == BoolTrue && !hasKeyShare {
 		return 0, errors.New("not a TLS 1.3 ClientHello")
 	}
-	if sniPos == -1 {
+	if sniStart == -1 {
 		return c.Conn.Write(b)
 	}
 	switch dohConnPolicy.Mode {
@@ -245,12 +245,12 @@ func (c *interceptConn) Write(b []byte) (n int, err error) {
 		}
 		if err = desyncSend(
 			c.Conn, ipv6, b,
-			sniPos, sniLen, ttl, dohConnPolicy.FakeSleep,
+			sniStart, sniLen, ttl, dohConnPolicy.FakeSleep,
 		); err != nil {
 			return 0, wrap("ttl desync", err)
 		}
 	case ModeTLSRF:
-		if err = sendRecords(c.Conn, b, sniPos, sniLen,
+		if err = sendRecords(c.Conn, b, sniStart, sniLen,
 			dohConnPolicy.NumRecords, dohConnPolicy.NumSegments,
 			dohConnPolicy.OOB == BoolTrue, dohConnPolicy.OOBEx == BoolTrue,
 			dohConnPolicy.ModMinorVer == BoolTrue,

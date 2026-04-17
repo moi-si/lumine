@@ -1,6 +1,7 @@
 package lumine
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -15,13 +16,12 @@ import (
 
 const readTimeout = 5 * time.Second
 
-func findLastDot(data []byte, sniPos, sniLen int) (offset int, found bool) {
-	for i := sniPos + sniLen; i >= sniPos; i-- {
-		if data[i] == '.' {
-			return i, true
-		}
+func findLastDotOrMidPos(data []byte, sniStart, sniLen int) int {
+	subIdx := bytes.LastIndexByte(data[sniStart:sniStart+sniLen], '.')
+	if subIdx == -1 {
+		return sniLen/2 + sniStart
 	}
-	return sniLen/2 + sniPos, false
+	return sniStart + subIdx
 }
 
 const (
@@ -35,7 +35,7 @@ const (
 	tlsExtTypeECH               = 0x00fe
 )
 
-func parseClientHello(data []byte) (prtVer []byte, sniPos int, sniLen int, hasKeyShare, hasECH bool, err error) {
+func parseClientHello(data []byte) (prtVer []byte, sniStart int, sniLen int, hasKeyShare, hasECH bool, err error) {
 	if data[0] != tlsRecordTypeHandshake {
 		return nil, -1, 0, false, false, errors.New("not a TLS handshake record")
 	}
@@ -108,7 +108,7 @@ func parseClientHello(data []byte) (prtVer []byte, sniPos int, sniLen int, hasKe
 	}
 	extensionsEnd := offset + extTotalLen
 
-	sniPos = -1
+	sniStart = -1
 
 	for offset+4 <= extensionsEnd {
 		extType := binary.BigEndian.Uint16(data[offset : offset+2])
@@ -117,7 +117,7 @@ func parseClientHello(data []byte) (prtVer []byte, sniPos int, sniLen int, hasKe
 		extDataEnd := extDataStart + extLen
 
 		if extDataEnd > extensionsEnd {
-			return prtVer, sniPos, sniLen, hasKeyShare, hasECH, errors.New("extension length exceeds extensions block")
+			return prtVer, sniStart, sniLen, hasKeyShare, hasECH, errors.New("extension length exceeds extensions block")
 		}
 
 		if extType == tlsExtTypeKeyShare {
@@ -128,34 +128,34 @@ func parseClientHello(data []byte) (prtVer []byte, sniPos int, sniLen int, hasKe
 			hasECH = true
 		}
 
-		if sniPos == -1 && extType == tlsExtTypeSNI {
+		if sniStart == -1 && extType == tlsExtTypeSNI {
 			if extLen < 2 {
-				return prtVer, sniPos, sniLen, hasKeyShare, hasECH, errors.New("malformed SNI extension (too short for list length)")
+				return prtVer, sniStart, sniLen, hasKeyShare, hasECH, errors.New("malformed SNI extension (too short for list length)")
 			}
 			listLen := int(binary.BigEndian.Uint16(data[extDataStart : extDataStart+2]))
 			if listLen+2 != extLen {
-				return prtVer, sniPos, sniLen, hasKeyShare, hasECH, errors.New("SNI list length field mismatch")
+				return prtVer, sniStart, sniLen, hasKeyShare, hasECH, errors.New("SNI list length field mismatch")
 			}
 			cursor := extDataStart + 2
 			if cursor+3 > extDataEnd {
-				return prtVer, sniPos, sniLen, hasKeyShare, hasECH, errors.New("SNI entry too short")
+				return prtVer, sniStart, sniLen, hasKeyShare, hasECH, errors.New("SNI entry too short")
 			}
 			nameType := data[cursor]
 			if nameType != 0 {
-				return prtVer, sniPos, sniLen, hasKeyShare, hasECH, errors.New("unsupported SNI name type")
+				return prtVer, sniStart, sniLen, hasKeyShare, hasECH, errors.New("unsupported SNI name type")
 			}
 			nameLen := int(binary.BigEndian.Uint16(data[cursor+1 : cursor+3]))
 			nameStart := cursor + 3
 			nameEnd := nameStart + nameLen
 			if nameEnd > extDataEnd {
-				return prtVer, sniPos, sniLen, hasKeyShare, hasECH, errors.New("SNI name length exceeds extension")
+				return prtVer, sniStart, sniLen, hasKeyShare, hasECH, errors.New("SNI name length exceeds extension")
 			}
-			sniPos = nameStart
+			sniStart = nameStart
 			sniLen = nameLen
 		}
 		offset = extDataEnd
 	}
-	return prtVer, sniPos, sniLen, hasKeyShare, hasECH, nil
+	return prtVer, sniStart, sniLen, hasKeyShare, hasECH, nil
 }
 
 func expandPattern(s string) []string {

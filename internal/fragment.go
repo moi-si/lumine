@@ -38,7 +38,7 @@ func sendRecords(conn net.Conn, clientHello []byte,
 		leftSegments = segments / 2
 		rightSegments = segments - leftSegments
 		packets := make([][]byte, 0, segments)
-		cut, _ := findLastDot(clientHello, offset, length)
+		cut := findLastDotOrMidPos(clientHello, offset, length)
 		splitAndAppend(clientHello[:cut], nil, leftSegments, &packets)
 		splitAndAppend(clientHello[cut:], nil, rightSegments, &packets)
 		for i, packet := range packets {
@@ -61,7 +61,7 @@ func sendRecords(conn net.Conn, clientHello []byte,
 	leftChunks := records / 2
 	rightChunks := records - leftChunks
 	chunks := make([][]byte, 0, records)
-	cut, _ := findLastDot(clientHello, offset, length)
+	cut := findLastDotOrMidPos(clientHello, offset, length)
 	header := clientHello[:3]
 	splitAndAppend(clientHello[tlsRecordHeaderLen:cut], header, leftChunks, &chunks)
 	splitAndAppend(clientHello[cut:], header, rightChunks, &chunks)
