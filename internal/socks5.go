@@ -52,7 +52,7 @@ func SOCKS5Accept(addr *string, serverAddr string, done chan struct{}) {
 		} else {
 			connID += 1
 			if connID > 0xFFFFF {
-				connID = 0
+				connID = 1
 			}
 			go socks5Handler(conn, connID)
 		}

@@ -52,8 +52,8 @@ func HTTPAccept(addr *string, serverAddr string) {
 func httpHandler(w http.ResponseWriter, req *http.Request) {
 	connID := atomic.AddUint32(&httpConnID, 1)
 	if connID > 0xFFFFF {
-		atomic.StoreUint32(&httpConnID, 0)
-		connID = 0
+		atomic.StoreUint32(&httpConnID, 1)
+		connID = 1
 	}
 	logger := log.New(os.Stdout, fmt.Sprintf("[H%05x]", connID), log.LstdFlags, logLevel)
 	logger.Info(req.RemoteAddr, joinString("- \"", req.Method, " ", req.RequestURI, " ", req.Proto, "\""))
