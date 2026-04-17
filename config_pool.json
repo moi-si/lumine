@@ -100,7 +100,7 @@
     "platform.twitter.com": "146.75.120.157",
     "(cn|purr|et).nytimes.com": "",
     "*nyt(imes|).com": "199.232.137.164",
-    "*netlify.app": "^$netlify.app"
+    "*netlify.app": "^$netlify"
   },
   "default_policy": {
     "reply_first": false,
