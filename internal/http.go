@@ -35,17 +35,15 @@ func HTTPAccept(addr *string, serverAddr string) {
 		return
 	}
 
-	srv := &http.Server{
-		Addr:              listenAddr,
-		Handler:           http.HandlerFunc(httpHandler),
-		ReadHeaderTimeout: readTimeout,
-	}
 	logger := log.New(os.Stdout, "[H00000]", log.LstdFlags, logLevel)
-	logger.Info("HTTP proxy server started at", srv.Addr)
-
-	if err := srv.ListenAndServe(); err != nil {
-		logger.Error("HTTP ListenAndServe:", err)
+	ln, err := net.Listen("tcp", listenAddr)
+	if err != nil {
+		logger.Error("Failed to start HTTP proxy server:", err)
 		return
+	}
+	logger.Info("HTTP proxy server started at", ln.Addr())
+	if err := http.Serve(ln, http.HandlerFunc(httpHandler)); err != nil {
+		logger.Error("HTTP serve:", err)
 	}
 }
 
@@ -138,8 +136,8 @@ func handleConnect(logger *log.Logger, w http.ResponseWriter, req *http.Request)
 		}
 	}()
 
-	if !(policy.ReplyFirst == BoolTrue) {
-		dstConn, err = net.DialTimeout("tcp", dest, policy.ConnectTimeout)
+	if policy.ReplyFirst != BoolTrue {
+		dstConn, err = dialTCPTimeout(dest, policy.ConnectTimeout)
 		if err != nil {
 			logger.Error("Connection to", oldDest, "failed:", err)
 			_, err = cliConn.Write([]byte("HTTP/1.1 502 Bad Gateway\r\n\r\n"))
@@ -230,8 +228,7 @@ func forwardHTTPRequest(logger *log.Logger, w http.ResponseWriter, originReq *ht
 
 	if p.ConnectTimeout > 0 {
 		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
-			d := net.Dialer{Timeout: p.ConnectTimeout}
-			return d.DialContext(ctx, network, addr)
+			return dialTimeout(ctx, network, addr, p.ConnectTimeout)
 		}
 	}
 

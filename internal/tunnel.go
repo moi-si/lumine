@@ -46,7 +46,7 @@ func handleTunnel(
 
 	if p.Mode == ModeRaw {
 		if dstConn == nil {
-			dstConn, err = net.DialTimeout("tcp", target, p.ConnectTimeout)
+			dstConn, err = dialTCPTimeout(target, p.ConnectTimeout)
 			if err != nil {
 				logger.Error("Connection to", oldTarget, "failed:", err)
 				return
@@ -149,7 +149,7 @@ func handleHTTP(
 
 	if p.HttpStatus == 0 || p.HttpStatus == -1 {
 		if dstConn == nil {
-			dstConn, err = net.DialTimeout("tcp", target, p.ConnectTimeout)
+			dstConn, err = dialTCPTimeout(target, p.ConnectTimeout)
 			if err != nil {
 				logger.Error("Connection to", oldTarget, "failed:", err)
 				resp := &http.Response{
@@ -225,7 +225,7 @@ func handleTLS(logger *log.Logger, recordLen int,
 	if sniStart <= 0 || sniLen <= 0 {
 		logger.Info("SNI not found")
 		if dstConn == nil {
-			dstConn, err = net.DialTimeout("tcp", target, p.ConnectTimeout)
+			dstConn, err = dialTCPTimeout(target, p.ConnectTimeout)
 			if err != nil {
 				logger.Error("Connection to", oldTarget, "failed:", err)
 				return
@@ -268,7 +268,7 @@ func handleTLS(logger *log.Logger, recordLen int,
 						originPort = formatInt(sniPolicy.Port)
 					}
 					newTarget := net.JoinHostPort(newDst, originPort)
-					newConn, err := net.DialTimeout("tcp", newTarget, sniPolicy.ConnectTimeout)
+					newConn, err := dialTCPTimeout(newTarget, sniPolicy.ConnectTimeout)
 					if err == nil {
 						if dstConn != nil {
 							dstConn.Close()
@@ -285,7 +285,7 @@ func handleTLS(logger *log.Logger, recordLen int,
 		}
 
 		if dstConn == nil {
-			dstConn, err = net.DialTimeout("tcp", target, p.ConnectTimeout)
+			dstConn, err = dialTCPTimeout(target, p.ConnectTimeout)
 			if err != nil {
 				logger.Error("Connection to", oldTarget, "failed:", err)
 				return

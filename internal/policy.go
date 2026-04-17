@@ -10,7 +10,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/moi-si/addrtrie"
 	log "github.com/moi-si/mylog"
+)
+
+var (
+	domainMatcher *addrtrie.DomainMatcher[*Policy]
+	ipMatcher     *addrtrie.IPv4Trie[*Policy]
+	ipv6Matcher   *addrtrie.IPv6Trie[*Policy]
+	hostsMatcher  *addrtrie.DomainMatcher[string]
 )
 
 const (
@@ -457,6 +465,66 @@ const (
 	resolvePrefix    = "?"
 )
 
+func getIPPolicy(ip string) (*Policy, bool) {
+	if isIPv6(ip) {
+		return ipv6Matcher.Find(ip)
+	}
+	return ipMatcher.Find(ip)
+}
+
+var dohConnPolicy *Policy
+
+type policyConn struct {
+	net.Conn
+	handled bool
+}
+
+func (c *policyConn) Write(b []byte) (n int, err error) {
+	if c.handled {
+		return c.Conn.Write(b)
+	}
+	c.handled = true
+	var sniStart, sniLen int
+	var hasKeyShare bool
+	_, sniStart, sniLen, hasKeyShare, _, err = parseClientHello(b)
+	if err != nil {
+		return
+	}
+	if dohConnPolicy.TLS13Only == BoolTrue && !hasKeyShare {
+		return 0, errors.New("not a TLS 1.3 ClientHello")
+	}
+	if sniStart == -1 {
+		return c.Conn.Write(b)
+	}
+	switch dohConnPolicy.Mode {
+	case ModeDirect, ModeRaw:
+		return c.Conn.Write(b)
+	case ModeTTLD:
+		raddr := c.RemoteAddr().String()
+		ipv6 := raddr[0] == '['
+		ttl, err := getFakeTTL(nil, dohConnPolicy, raddr, ipv6)
+		if err != nil {
+			return 0, wrap("get fake TTL", err)
+		}
+		if err = desyncSend(
+			c.Conn, ipv6, b,
+			sniStart, sniLen, ttl, dohConnPolicy.FakeSleep,
+		); err != nil {
+			return 0, wrap("ttl desync", err)
+		}
+	case ModeTLSRF:
+		if err = sendRecords(c.Conn, b, sniStart, sniLen,
+			dohConnPolicy.NumRecords, dohConnPolicy.NumSegments,
+			dohConnPolicy.OOB == BoolTrue, dohConnPolicy.OOBEx == BoolTrue,
+			dohConnPolicy.ModMinorVer == BoolTrue,
+			dohConnPolicy.SendInterval); err != nil {
+			return 0, wrap("tls fragment", err)
+		}
+	}
+	n = len(b)
+	return
+}
+
 func genDoHDialFunc() (func(ctx context.Context, network, address string) (net.Conn, error), error) {
 	parsedURL, err := url.Parse(dnsAddr)
 	if err != nil {
@@ -523,11 +591,12 @@ func genDoHDialFunc() (func(ctx context.Context, network, address string) (net.C
 		port = formatInt(dohConnPolicy.Port)
 	}
 	addr := net.JoinHostPort(host, port)
-	dialer := net.Dialer{Timeout: dohConnPolicy.ConnectTimeout}
 	return func(ctx context.Context, network, _ string) (net.Conn, error) {
-		conn, err := dialer.DialContext(ctx, network, addr)
+		timeoutCtx, cancel := context.WithTimeout(ctx, dohConnPolicy.ConnectTimeout)
+		defer cancel()
+		conn, err := globalDialer.DialContext(timeoutCtx, network, addr)
 		if err == nil {
-			return &interceptConn{Conn: conn}, nil
+			return &policyConn{Conn: conn}, nil
 		}
 		return nil, err
 	}, nil
@@ -536,10 +605,7 @@ func genDoHDialFunc() (func(ctx context.Context, network, address string) (net.C
 func genPolicy(logger *log.Logger, originHost string, isIP, returnWhenDomainNotFound bool) (dstHost string, p *Policy, failed, blocked, domainNotFound bool) {
 	var err error
 
-	if !isIP {
-		isIP = net.ParseIP(originHost) != nil
-	}
-
+	isIP = isIP || net.ParseIP(originHost) != nil
 	if isIP {
 		var ipPolicy *Policy
 		dstHost, ipPolicy, err = ipRedirect(logger, originHost)

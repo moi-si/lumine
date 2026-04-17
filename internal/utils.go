@@ -9,12 +9,9 @@ import (
 	"net/netip"
 	"strings"
 	"syscall"
-	"time"
 
 	log "github.com/moi-si/mylog"
 )
-
-const readTimeout = 5 * time.Second
 
 func findLastDotOrMidPos(data []byte, sniStart, sniLen int) int {
 	subIdx := bytes.LastIndexByte(data[sniStart:sniStart+sniLen], '.')

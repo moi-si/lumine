@@ -1,7 +1,6 @@
 package lumine
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -47,7 +46,6 @@ type IPPool struct {
 	curValidIPs uint32
 
 	scanMu  sync.Mutex
-	cancel  context.CancelFunc
 	sem     chan struct{}
 	counter uint32
 }
@@ -343,10 +341,10 @@ func (p *IPPool) Get() string {
 }
 
 func getFromIPPool(tag string) (ipStr string, err error) {
-	if len(IPPools) == 0 {
+	if len(ipPools) == 0 {
 		return "", errors.New("no ip pools")
 	}
-	ipPool, exists := IPPools[tag]
+	ipPool, exists := ipPools[tag]
 	if !exists {
 		return "", errors.New("ip pool " + tag + " does not exist")
 	}
