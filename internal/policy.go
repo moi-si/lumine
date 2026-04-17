@@ -370,6 +370,7 @@ func mergePolicies(policies ...*Policy) *Policy {
 	merged := Policy{
 		Host:           unsetString,
 		MapTo:          unsetString,
+		Port:           unsetInt,
 		HttpStatus:     unsetInt,
 		SendInterval:   unsetInt,
 		FakeTTL:        unsetInt,
@@ -392,7 +393,7 @@ func mergePolicies(policies ...*Policy) *Policy {
 		if merged.MapTo == unsetString && p.MapTo != unsetString {
 			merged.MapTo = p.MapTo
 		}
-		if merged.Port == 0 && p.Port != 0 {
+		if merged.Port == unsetInt && p.Port != unsetInt {
 			merged.Port = p.Port
 		}
 		if merged.HttpStatus == unsetInt && p.HttpStatus != unsetInt {
