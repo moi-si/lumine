@@ -35,6 +35,7 @@ type OutboundLocalAddrOption struct {
 
 func getBindIP(
 	bindIPStr,
+	zone,
 	detectNetwork,
 	detectTarget,
 	defalutDetectTarget string,
@@ -64,6 +65,7 @@ func getBindIP(
 		if bindIP == nil {
 			return nil, "", errors.New("invalid bind IP: " + bindIPStr)
 		}
+		bindZone = zone
 	}
 	return
 }
@@ -91,6 +93,7 @@ func setOutboundLocalAddr(option OutboundLocalAddrOption) error {
 	}
 	bindIPv4, _, err := getBindIP(
 		option.BindIPv4,
+		"",
 		network,
 		option.DetectTarget4,
 		"8.8.8.8:53",
@@ -104,6 +107,7 @@ func setOutboundLocalAddr(option OutboundLocalAddrOption) error {
 	}
 	bindIPv6, zone, err := getBindIP(
 		option.BindIPv6,
+		option.BindZone,
 		network,
 		option.DetectTarget6,
 		"[2001:4860:4860::8888]:53",
