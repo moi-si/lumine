@@ -47,7 +47,7 @@ func SelectInterface() error {
 		ipv4Dialer.LocalAddr = &net.TCPAddr{IP: iface.ipv4}
 	}
 	if iface.ipv6 != nil {
-		ipv6Dialer.LocalAddr = &net.TCPAddr{IP: iface.ipv6}
+		ipv6Dialer.LocalAddr = &net.TCPAddr{IP: iface.ipv6, Zone: iface.name}
 	}
 	return nil
 }
