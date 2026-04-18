@@ -201,11 +201,8 @@ func handleTLS(logger *log.Logger, recordLen int,
 	p *Policy, originHost, oldTarget, target, originPort string,
 	br *bufio.Reader, cliConn, dstConn net.Conn) (newConn net.Conn, ok bool) {
 	record := make([]byte, recordLen)
-	if n, err := br.Read(record); err != nil {
+	if _, err := io.ReadFull(br, record); err != nil {
 		logger.Error("Read first record:", err)
-		return
-	} else if n < int(recordLen) {
-		logger.Error(joinString("Read only ", n, " of ", recordLen, " bytes"))
 		return
 	}
 	prtVer, sniStart, sniLen, hasKeyShare, hasECH, err := parseClientHello(record)
