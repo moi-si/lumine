@@ -5,6 +5,7 @@ package lumine
 import (
 	"net"
 
+	E "github.com/moi-si/lumine/internal/errors"
 	"golang.org/x/sys/unix"
 )
 
@@ -31,10 +32,10 @@ func sendWithOOB(conn net.Conn, data []byte, oob byte) error {
 	})
 
 	if err != nil {
-		return wrap("raw write (send)", err)
+		return E.WithStr("raw write (send)", err)
 	}
 	if innerErr != nil {
-		return wrap("send (MSG_OOB)", innerErr)
+		return E.WithStr("send (MSG_OOB)", innerErr)
 	}
 	return nil
 }

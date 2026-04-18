@@ -7,6 +7,8 @@ import (
 	"syscall"
 	"time"
 
+	E "github.com/moi-si/lumine/internal/errors"
+	F "github.com/moi-si/lumine/internal/format"
 	"golang.org/x/sys/unix"
 )
 
@@ -35,10 +37,10 @@ func detectMinimalReachableTTL(
 			if err := c.Control(func(fd uintptr) {
 				innerErr = unix.SetsockoptInt(int(fd), level, opt, mid)
 			}); err != nil {
-				return wrap("raw control", err)
+				return E.WithStr("raw control", err)
 			}
 			if innerErr != nil {
-				return wrap("setsockopt", innerErr)
+				return E.WithStr("setsockopt", innerErr)
 			}
 			return nil
 		}
@@ -51,7 +53,7 @@ func detectMinimalReachableTTL(
 				break
 			}
 			if netErr := err.(*net.OpError); !netErr.Timeout() {
-				return unsetInt, wrap("dial "+formatInt(mid), err)
+				return unsetInt, E.WithStr("dial "+F.Int(mid), err)
 			}
 		}
 		if ok {
@@ -76,7 +78,7 @@ func sendWithNoise(
 ) error {
 	var pipeFDs [2]int
 	if err := unix.Pipe2(pipeFDs[:], unix.O_CLOEXEC|unix.O_NONBLOCK); err != nil {
-		return wrap("create pipe", err)
+		return E.WithStr("create pipe", err)
 	}
 	pipeR, pipeW := pipeFDs[0], pipeFDs[1]
 	defer unix.Close(pipeR)
@@ -89,21 +91,21 @@ func sendWithNoise(
 		unix.PROT_READ|unix.PROT_WRITE,
 		unix.MAP_PRIVATE|unix.MAP_ANONYMOUS)
 	if err != nil {
-		return wrap("mmap", err)
+		return E.WithStr("mmap", err)
 	}
 	defer unix.Munmap(data)
 	copy(data, fakeData)
 
 	err = unix.SetsockoptInt(socketFD, level, opt, fakeTTL)
 	if err != nil {
-		return wrap("set fake TTL", err)
+		return E.WithStr("set fake TTL", err)
 	}
 	iov := unix.Iovec{
 		Base: &data[0],
 		Len:  itou(len(fakeData)),
 	}
 	if _, err := unix.Vmsplice(pipeW, []unix.Iovec{iov}, unix.SPLICE_F_GIFT); err != nil {
-		return wrap("vmsplice", err)
+		return E.WithStr("vmsplice", err)
 	}
 
 	var rawWriteErr, innerErr error
@@ -134,14 +136,14 @@ func sendWithNoise(
 
 	err = unix.SetsockoptInt(socketFD, level, opt, defaultTTL)
 	if err != nil {
-		return wrap("set default TTL", err)
+		return E.WithStr("set default TTL", err)
 	}
 	<-done
 	if rawWriteErr != nil {
-		return wrap("raw write (splice)", rawWriteErr)
+		return E.WithStr("raw write (splice)", rawWriteErr)
 	}
 	if innerErr != nil {
-		return wrap("splice", innerErr)
+		return E.WithStr("splice", innerErr)
 	}
 	return nil
 }
@@ -160,7 +162,7 @@ func desyncSend(
 	if err = rawConn.Control(func(fileDesc uintptr) {
 		fd = int(fileDesc)
 	}); err != nil {
-		return wrap("raw control", err)
+		return E.WithStr("raw control", err)
 	}
 
 	var level, opt, defaultTTL int
@@ -173,7 +175,7 @@ func desyncSend(
 	}
 	defaultTTL, err = unix.GetsockoptInt(fd, level, opt)
 	if err != nil {
-		return wrap("get default TTL", err)
+		return E.WithStr("get default TTL", err)
 	}
 
 	if fakeSleep < minInterval {
@@ -193,10 +195,10 @@ func desyncSend(
 		level, opt,
 		fakeSleep,
 	); err != nil {
-		return wrap("send data with noise", err)
+		return E.WithStr("send data with noise", err)
 	}
 	if _, err = conn.Write(record[cut:]); err != nil {
-		return wrap("send remaining data", err)
+		return E.WithStr("send remaining data", err)
 	}
 	return nil
 }

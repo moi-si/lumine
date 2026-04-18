@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/moi-si/lumine/internal/dial"
+	F "github.com/moi-si/lumine/internal/format"
 	log "github.com/moi-si/mylog"
 )
 
@@ -46,7 +48,7 @@ func handleTunnel(
 
 	if p.Mode == ModeRaw {
 		if dstConn == nil {
-			dstConn, err = dialTCPTimeout(target, p.ConnectTimeout)
+			dstConn, err = dial.DialTCPTimeout(target, p.ConnectTimeout)
 			if err != nil {
 				logger.Error("Connection to", oldTarget, "failed:", err)
 				return
@@ -149,7 +151,7 @@ func handleHTTP(
 
 	if p.HttpStatus == 0 || p.HttpStatus == -1 {
 		if dstConn == nil {
-			dstConn, err = dialTCPTimeout(target, p.ConnectTimeout)
+			dstConn, err = dial.DialTCPTimeout(target, p.ConnectTimeout)
 			if err != nil {
 				logger.Error("Connection to", oldTarget, "failed:", err)
 				resp := &http.Response{
@@ -222,7 +224,7 @@ func handleTLS(logger *log.Logger, recordLen int,
 	if sniStart <= 0 || sniLen <= 0 {
 		logger.Info("SNI not found")
 		if dstConn == nil {
-			dstConn, err = dialTCPTimeout(target, p.ConnectTimeout)
+			dstConn, err = dial.DialTCPTimeout(target, p.ConnectTimeout)
 			if err != nil {
 				logger.Error("Connection to", oldTarget, "failed:", err)
 				return
@@ -262,10 +264,10 @@ func handleTLS(logger *log.Logger, recordLen int,
 					}
 					logger.Info("New policy:", sniPolicy)
 					if sniPolicy.Port != 0 && sniPolicy.Port != -1 {
-						originPort = formatInt(sniPolicy.Port)
+						originPort = F.Int(sniPolicy.Port)
 					}
 					newTarget := net.JoinHostPort(newDst, originPort)
-					newConn, err := dialTCPTimeout(newTarget, sniPolicy.ConnectTimeout)
+					newConn, err := dial.DialTCPTimeout(newTarget, sniPolicy.ConnectTimeout)
 					if err == nil {
 						if dstConn != nil {
 							dstConn.Close()
@@ -275,14 +277,14 @@ func handleTLS(logger *log.Logger, recordLen int,
 						target = newTarget
 						logger.Info("Target has been changed to", sniStr)
 					} else {
-						logger.Error(joinString("Connection to ", newTarget, " failed: ", err, "; falling back to origin"))
+						logger.Error(F.Concat("Connection to ", newTarget, " failed: ", err, "; falling back to origin"))
 					}
 				}
 			}
 		}
 
 		if dstConn == nil {
-			dstConn, err = dialTCPTimeout(target, p.ConnectTimeout)
+			dstConn, err = dial.DialTCPTimeout(target, p.ConnectTimeout)
 			if err != nil {
 				logger.Error("Connection to", oldTarget, "failed:", err)
 				return

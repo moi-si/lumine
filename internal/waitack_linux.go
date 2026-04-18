@@ -6,6 +6,7 @@ import (
 	"net"
 	"time"
 
+	E "github.com/moi-si/lumine/internal/errors"
 	"golang.org/x/sys/unix"
 )
 
@@ -38,9 +39,9 @@ func waitForAck(enabled bool, conn net.Conn, delay time.Duration) error {
 		}
 	})
 	if rawCtrlErr != nil {
-		return wrap("wait for ACK: raw control", rawCtrlErr)
+		return E.WithStr("wait for ACK: raw control", rawCtrlErr)
 	} else if innerErr != nil {
-		return wrap("wait for ACK: get tcp info", innerErr)
+		return E.WithStr("wait for ACK: get tcp info", innerErr)
 	}
 	return nil
 }

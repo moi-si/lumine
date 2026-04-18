@@ -10,6 +10,8 @@ import (
 	"os"
 	"sync/atomic"
 
+	"github.com/moi-si/lumine/internal/dial"
+	F "github.com/moi-si/lumine/internal/format"
 	log "github.com/moi-si/mylog"
 )
 
@@ -54,7 +56,7 @@ func httpHandler(w http.ResponseWriter, req *http.Request) {
 		connID = 1
 	}
 	logger := log.New(os.Stdout, fmt.Sprintf("[H%05x]", connID), log.LstdFlags, logLevel)
-	logger.Info(req.RemoteAddr, joinString("- \"", req.Method, " ", req.RequestURI, " ", req.Proto, "\""))
+	logger.Info(req.RemoteAddr, F.Concat("- \"", req.Method, " ", req.RequestURI, " ", req.Proto, "\""))
 
 	if req.Method == http.MethodConnect {
 		handleConnect(logger, w, req)
@@ -104,7 +106,7 @@ func handleConnect(logger *log.Logger, w http.ResponseWriter, req *http.Request)
 
 	dstPort := originPort
 	if policy.Port != 0 && policy.Port != unsetInt {
-		dstPort = formatInt(policy.Port)
+		dstPort = F.Int(policy.Port)
 	}
 
 	dest := net.JoinHostPort(dstHost, dstPort)
@@ -137,7 +139,7 @@ func handleConnect(logger *log.Logger, w http.ResponseWriter, req *http.Request)
 	}()
 
 	if policy.ReplyFirst != BoolTrue {
-		dstConn, err = dialTCPTimeout(dest, policy.ConnectTimeout)
+		dstConn, err = dial.DialTCPTimeout(dest, policy.ConnectTimeout)
 		if err != nil {
 			logger.Error("Connection to", oldDest, "failed:", err)
 			_, err = cliConn.Write([]byte("HTTP/1.1 502 Bad Gateway\r\n\r\n"))
@@ -205,7 +207,7 @@ func forwardHTTPRequest(logger *log.Logger, w http.ResponseWriter, originReq *ht
 
 	dstPort := port
 	if p.Port != 0 && p.Port != unsetInt {
-		dstPort = formatInt(p.Port)
+		dstPort = F.Int(p.Port)
 	}
 
 	outReq := originReq.Clone(context.Background())
@@ -228,7 +230,7 @@ func forwardHTTPRequest(logger *log.Logger, w http.ResponseWriter, originReq *ht
 
 	if p.ConnectTimeout > 0 {
 		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
-			return dialTimeout(ctx, network, addr, p.ConnectTimeout)
+			return dial.DialTimeout(ctx, network, addr, p.ConnectTimeout)
 		}
 	}
 

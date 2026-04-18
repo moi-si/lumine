@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/elastic/go-freelru"
+	E "github.com/moi-si/lumine/internal/errors"
 	log "github.com/moi-si/mylog"
 	"golang.org/x/sync/singleflight"
 )
@@ -145,7 +146,7 @@ func getFakeTTL(logger *log.Logger, p *Policy, addr string, ipv6 bool) (ttl int,
 		var cached bool
 		ttl, cached, err = getMinimalReachableTTL(addr, ipv6, p.MaxTTL, p.Attempts, p.SingleTimeout)
 		if err != nil {
-			return unsetInt, wrap("detect minimum reachable TTL", err)
+			return unsetInt, E.WithStr("detect minimum reachable TTL", err)
 		}
 		if ttl == unsetInt {
 			return unsetInt, errors.New("reachable TTL not found")
@@ -153,14 +154,14 @@ func getFakeTTL(logger *log.Logger, p *Policy, addr string, ipv6 bool) (ttl int,
 		if calcTTL != nil {
 			ttl, err = calcTTL(ttl)
 			if err != nil {
-				return unsetInt, wrap("calculate fake TTL", err)
+				return unsetInt, E.WithStr("calculate fake TTL", err)
 			}
 		} else {
 			ttl -= 1
 		}
 		if logger != nil {
 			if cached {
-				logger.Info("Fake TTL (cached):", formatInt(ttl))
+				logger.Info("Fake TTL (cached):", ttl)
 			} else {
 				logger.Info("Fake TTL:", ttl)
 			}

@@ -11,6 +11,9 @@ import (
 	"time"
 
 	"github.com/moi-si/addrtrie"
+	"github.com/moi-si/lumine/internal/dial"
+	E "github.com/moi-si/lumine/internal/errors"
+	F "github.com/moi-si/lumine/internal/format"
 	log "github.com/moi-si/mylog"
 )
 
@@ -333,13 +336,13 @@ func (p Policy) String() string {
 		fields = append(fields, "timeout="+p.ConnectTimeout.String())
 	}
 	if p.Port != unsetInt && p.Port != 0 {
-		fields = append(fields, ":"+formatInt(p.Port))
+		fields = append(fields, ":"+F.Int(p.Port))
 	}
 	if p.DNSMode != DNSModeUnknown && (p.Host == "" || p.Host == unsetString) {
 		fields = append(fields, p.DNSMode.String())
 	}
 	if p.HttpStatus > 0 {
-		fields = append(fields, "http_status="+formatInt(p.HttpStatus))
+		fields = append(fields, "http_status="+F.Int(p.HttpStatus))
 	}
 	if p.TLS13Only.IsTrue() {
 		fields = append(fields, "tls13_only")
@@ -351,10 +354,10 @@ func (p Policy) String() string {
 			fields = append(fields, "mod_minor_ver")
 		}
 		if p.NumRecords != unsetInt && p.NumRecords != 1 {
-			fields = append(fields, formatInt(p.NumRecords)+" records")
+			fields = append(fields, F.Int(p.NumRecords)+" records")
 		}
 		if p.NumSegments != unsetInt && p.NumSegments != 1 {
-			fields = append(fields, formatInt(p.NumSegments)+" segments")
+			fields = append(fields, F.Int(p.NumSegments)+" segments")
 		}
 		if p.SendInterval > 0 {
 			fields = append(fields, "send_interval="+p.SendInterval.String())
@@ -370,16 +373,16 @@ func (p Policy) String() string {
 		if p.FakeTTL == 0 || p.FakeTTL == unsetInt {
 			fields = append(fields, "auto_fake_ttl")
 			if p.Attempts != 0 {
-				fields = append(fields, "attempts="+formatInt(p.Attempts))
+				fields = append(fields, "attempts="+F.Int(p.Attempts))
 			}
 			if p.MaxTTL != 0 {
-				fields = append(fields, "max_ttl="+formatInt(p.MaxTTL))
+				fields = append(fields, "max_ttl="+F.Int(p.MaxTTL))
 			}
 			if p.SingleTimeout != 0 {
 				fields = append(fields, "single_timeout="+p.SingleTimeout.String())
 			}
 		} else {
-			fields = append(fields, "fake_ttl="+formatInt(p.FakeTTL))
+			fields = append(fields, "fake_ttl="+F.Int(p.FakeTTL))
 		}
 		fields = append(fields, "fake_sleep="+p.FakeSleep.String())
 	}
@@ -519,13 +522,13 @@ func (c *policyConn) Write(b []byte) (n int, err error) {
 		ipv6 := raddr[0] == '['
 		ttl, err := getFakeTTL(nil, dohConnPolicy, raddr, ipv6)
 		if err != nil {
-			return 0, wrap("get fake TTL", err)
+			return 0, E.WithStr("get fake TTL", err)
 		}
 		if err = desyncSend(
 			c.Conn, ipv6, b,
 			sniStart, sniLen, ttl, dohConnPolicy.FakeSleep,
 		); err != nil {
-			return 0, wrap("ttl desync", err)
+			return 0, E.WithStr("ttl desync", err)
 		}
 	case ModeTLSRF:
 		if err = sendRecords(c.Conn, b, sniStart, sniLen,
@@ -533,7 +536,7 @@ func (c *policyConn) Write(b []byte) (n int, err error) {
 			dohConnPolicy.OOB.IsTrue(), dohConnPolicy.OOBEx.IsTrue(),
 			dohConnPolicy.ModMinorVer.IsTrue(), dohConnPolicy.WaitForAck.IsTrue(),
 			dohConnPolicy.SendInterval); err != nil {
-			return 0, wrap("tls fragment", err)
+			return 0, E.WithStr("tls fragment", err)
 		}
 	}
 	n = len(b)
@@ -543,7 +546,7 @@ func (c *policyConn) Write(b []byte) (n int, err error) {
 func genDoHDialFunc() (func(ctx context.Context, network, address string) (net.Conn, error), error) {
 	parsedURL, err := url.Parse(dnsAddr)
 	if err != nil {
-		return nil, wrap("invalid DoH URL", err)
+		return nil, E.WithStr("invalid DoH URL", err)
 	}
 	host := parsedURL.Hostname()
 	dohConnPolicy = new(Policy)
@@ -556,7 +559,7 @@ func genDoHDialFunc() (func(ctx context.Context, network, address string) (net.C
 			dohConnPolicy = mergePolicies(ipPolicy, &defaultPolicy)
 		}
 		if err != nil {
-			return nil, wrap("ip redirect", err)
+			return nil, E.WithStr("ip redirect", err)
 		}
 	} else {
 		domainPolicy, foundDomainPolicy := domainMatcher.Find(host)
@@ -603,13 +606,11 @@ func genDoHDialFunc() (func(ctx context.Context, network, address string) (net.C
 		port = "443"
 	}
 	if dohConnPolicy.Port != unsetInt {
-		port = formatInt(dohConnPolicy.Port)
+		port = F.Int(dohConnPolicy.Port)
 	}
 	addr := net.JoinHostPort(host, port)
 	return func(ctx context.Context, network, _ string) (net.Conn, error) {
-		timeoutCtx, cancel := context.WithTimeout(ctx, dohConnPolicy.ConnectTimeout)
-		defer cancel()
-		conn, err := globalDialer.DialContext(timeoutCtx, network, addr)
+		conn, err := dial.DialTimeout(ctx, network, addr, dohConnPolicy.ConnectTimeout)
 		if err == nil {
 			return &policyConn{Conn: conn}, nil
 		}

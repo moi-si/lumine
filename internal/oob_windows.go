@@ -3,6 +3,7 @@ package lumine
 import (
 	"net"
 
+	E "github.com/moi-si/lumine/internal/errors"
 	"golang.org/x/sys/windows"
 )
 
@@ -39,10 +40,10 @@ func sendWithOOB(conn net.Conn, data []byte, oob byte) error {
 		return true
 	})
 	if err != nil {
-		return wrap("raw write (wsasend)", err)
+		return E.WithStr("raw write (wsasend)", err)
 	}
 	if innerErr != nil && innerErr != windows.NOERROR {
-		return wrap("wsasend (MSG_OOB)", innerErr)
+		return E.WithStr("wsasend (MSG_OOB)", innerErr)
 	}
 	return nil
 }

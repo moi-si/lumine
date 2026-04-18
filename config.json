@@ -2,16 +2,7 @@
   "log_level": "INFO",
   "socks5_address": "127.0.0.1:1080",
   "http_address": "127.0.0.1:1225",
-  "outbound_local_addr": {
-    "enabled": true,
-    "bind_ipv4": "auto",
-    "bind_ipv6": "auto",
-    "bind_zone": "",
-    "detect_network": "udp",
-    "detect_ipv4_target": "8.8.8.8:53",
-    "detect_ipv6_target": "[2001:4860:4860::8888]:53",
-    "dial_timeout": "5s"
-  },
+  "select_interface": true,
   "dns_addr": "https://987.cloudflare-gateway.com/dns-query",
   "socks5_for_doh": "",
   "udp_minsize": 4096,

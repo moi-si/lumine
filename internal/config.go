@@ -3,8 +3,6 @@ package lumine
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -17,6 +15,8 @@ import (
 	"github.com/elastic/go-freelru"
 	"github.com/miekg/dns"
 	"github.com/moi-si/addrtrie"
+	"github.com/moi-si/lumine/internal/dial"
+	E "github.com/moi-si/lumine/internal/errors"
 	log "github.com/moi-si/mylog"
 	"golang.org/x/net/proxy"
 	"golang.org/x/sync/singleflight"
@@ -25,26 +25,26 @@ import (
 const Version = "v0.8.1"
 
 type Config struct {
-	OutboundLocalAddr OutboundLocalAddrOption `json:"outbound_local_addr"`
-	LogLevel          string                  `json:"log_level"`
-	TransmitFileLimit int                     `json:"transmit_file_limit"`
-	Socks5Addr        string                  `json:"socks5_address"`
-	HttpAddr          string                  `json:"http_address"`
-	DNSAddr           string                  `json:"dns_addr"`
-	UDPSize           uint16                  `json:"udp_minsize"`
-	DoHProxy          string                  `json:"socks5_for_doh"`
-	FakeTTLRules      string                  `json:"fake_ttl_rules"`
-	DNSSingleflight   bool                    `json:"dns_singleflight"`
-	DNSCacheTTL       int                     `json:"dns_cache_ttl"`
-	DNSCacheCapacity  int                     `json:"dns_cache_cap"`
-	TTLSingleflight   bool                    `json:"ttl_singleflight"`
-	TTLCacheTTL       int                     `json:"ttl_cache_ttl"`
-	TTLCacheCapacity  int                     `json:"ttl_cache_cap"`
-	IPPools           map[string]*IPPool      `json:"ip_pools"`
-	Hosts             map[string]string       `json:"hosts"`
-	DefaultPolicy     Policy                  `json:"default_policy"`
-	DomainPolicies    map[string]Policy       `json:"domain_policies"`
-	IpPolicies        map[string]Policy       `json:"ip_policies"`
+	LogLevel          string             `json:"log_level"`
+	TransmitFileLimit int                `json:"transmit_file_limit"`
+	Socks5Addr        string             `json:"socks5_address"`
+	HttpAddr          string             `json:"http_address"`
+	SelectInterface   bool               `json:"select_interface"`
+	DNSAddr           string             `json:"dns_addr"`
+	UDPSize           uint16             `json:"udp_minsize"`
+	DoHProxy          string             `json:"socks5_for_doh"`
+	FakeTTLRules      string             `json:"fake_ttl_rules"`
+	DNSSingleflight   bool               `json:"dns_singleflight"`
+	DNSCacheTTL       int                `json:"dns_cache_ttl"`
+	DNSCacheCapacity  int                `json:"dns_cache_cap"`
+	TTLSingleflight   bool               `json:"ttl_singleflight"`
+	TTLCacheTTL       int                `json:"ttl_cache_ttl"`
+	TTLCacheCapacity  int                `json:"ttl_cache_cap"`
+	IPPools           map[string]*IPPool `json:"ip_pools"`
+	Hosts             map[string]string  `json:"hosts"`
+	DefaultPolicy     Policy             `json:"default_policy"`
+	DomainPolicies    map[string]Policy  `json:"domain_policies"`
+	IpPolicies        map[string]Policy  `json:"ip_policies"`
 }
 
 var (
@@ -71,8 +71,10 @@ func LoadConfig(filePath string) (string, string, error) {
 	}
 	file.Close()
 
-	if err := setOutboundLocalAddr(conf.OutboundLocalAddr); err != nil {
-		fmt.Fprintln(os.Stderr, "Set outbound local addr", err)
+	if conf.SelectInterface {
+		if err := dial.SelectInterface(); err != nil {
+			return "", "", err
+		}
 	}
 
 	if conf.LogLevel != "" {
@@ -84,7 +86,7 @@ func LoadConfig(filePath string) (string, string, error) {
 		case "ERROR", "error":
 			logLevel = log.ERROR
 		default:
-			return "", "", errors.New("unknown log level: " + conf.LogLevel)
+			return "", "", E.New("unknown log level: " + conf.LogLevel)
 		}
 	}
 
@@ -93,7 +95,7 @@ func LoadConfig(filePath string) (string, string, error) {
 		for tag, pool := range ipPools {
 			logger := log.New(os.Stdout, "[P-"+tag+"]", log.LstdFlags, logLevel)
 			if err := pool.Init(logger); err != nil {
-				return "", "", wrap("init ip pool "+tag, err)
+				return "", "", E.WithStr("init ip pool "+tag, err)
 			}
 		}
 	}
@@ -106,29 +108,29 @@ func LoadConfig(filePath string) (string, string, error) {
 	}
 
 	if conf.DNSCacheTTL < 0 {
-		return "", "", errors.New("invalid dns_cache_ttl: " + strconv.Itoa(conf.DNSCacheTTL))
+		return "", "", E.New("invalid dns_cache_ttl: " + strconv.Itoa(conf.DNSCacheTTL))
 	}
 	if conf.DNSCacheTTL != 0 {
 		if conf.DNSCacheCapacity < 1 {
-			return "", "", errors.New("invalid dns_cache_cap: " + strconv.Itoa(conf.DNSCacheCapacity))
+			return "", "", E.New("invalid dns_cache_cap: " + strconv.Itoa(conf.DNSCacheCapacity))
 		}
 		dnsCache, err = freelru.NewSharded[string, string](uint32(conf.DNSCacheCapacity), hashStringXXHASH)
 		if err != nil {
-			return "", "", wrap("init dns cache", err)
+			return "", "", E.WithStr("init dns cache", err)
 		}
 		dnsCacheTTL = time.Duration(conf.DNSCacheTTL) * time.Second
 	}
 
 	if conf.TTLCacheTTL < 0 {
-		return "", "", errors.New("invalid ttl cache ttl: " + strconv.Itoa(conf.TTLCacheTTL))
+		return "", "", E.New("invalid ttl cache ttl: " + strconv.Itoa(conf.TTLCacheTTL))
 	}
 	if conf.TTLCacheTTL != 0 {
 		if conf.TTLCacheCapacity < 1 {
-			return "", "", errors.New("invalid ttl_cache_cap: " + strconv.Itoa(conf.TTLCacheCapacity))
+			return "", "", E.New("invalid ttl_cache_cap: " + strconv.Itoa(conf.TTLCacheCapacity))
 		}
 		ttlCache, err = freelru.NewSharded[string, int](uint32(conf.TTLCacheCapacity), hashStringXXHASH)
 		if err != nil {
-			return "", "", wrap("init ttl cache", err)
+			return "", "", E.WithStr("init ttl cache", err)
 		}
 		ttlCacheTTL = time.Duration(conf.TTLCacheTTL) * time.Second
 	}
@@ -136,7 +138,7 @@ func LoadConfig(filePath string) (string, string, error) {
 	if conf.FakeTTLRules != "" {
 		err = loadTTLRules(conf.FakeTTLRules)
 		if err != nil {
-			return "", "", wrap("load fake ttl rules", err)
+			return "", "", E.WithStr("load fake ttl rules", err)
 		}
 		if runtime.GOOS == "windows" && conf.TransmitFileLimit > 0 {
 			sem = make(chan struct{}, conf.TransmitFileLimit)
@@ -188,7 +190,7 @@ func LoadConfig(filePath string) (string, string, error) {
 		} else {
 			dialer, err := proxy.SOCKS5("tcp", conf.DoHProxy, nil, proxy.Direct)
 			if err != nil {
-				return "", "", wrap("create socks5 dialer", err)
+				return "", "", E.WithStr("create socks5 dialer", err)
 			}
 			dialContext = func(_ context.Context, network, addr string) (net.Conn, error) {
 				return dialer.Dial(network, addr)

@@ -11,6 +11,7 @@ import (
 
 	"github.com/elastic/go-freelru"
 	"github.com/miekg/dns"
+	E "github.com/moi-si/lumine/internal/errors"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -76,18 +77,18 @@ func do53Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
 func dohExchange(req *dns.Msg) (resp *dns.Msg, err error) {
 	wire, err := req.Pack()
 	if err != nil {
-		return nil, wrap("pack dns request", err)
+		return nil, E.WithStr("pack dns request", err)
 	}
 	b64 := base64.RawURLEncoding.EncodeToString(wire)
 	u := dnsAddr + "?dns=" + b64
 	httpReq, err := http.NewRequest(http.MethodGet, u, nil)
 	if err != nil {
-		return nil, wrap("build http request", err)
+		return nil, E.WithStr("build http request", err)
 	}
 	httpReq.Header.Set("Accept", "application/dns-message")
 	httpResp, err := httpCli.Do(httpReq)
 	if err != nil {
-		return nil, wrap("http request", err)
+		return nil, E.WithStr("http request", err)
 	}
 	defer httpResp.Body.Close()
 	if httpResp.StatusCode != http.StatusOK {
@@ -95,11 +96,11 @@ func dohExchange(req *dns.Msg) (resp *dns.Msg, err error) {
 	}
 	respWire, err := io.ReadAll(httpResp.Body)
 	if err != nil {
-		return nil, wrap("read http body", err)
+		return nil, E.WithStr("read http body", err)
 	}
 	resp = new(dns.Msg)
 	if err = resp.Unpack(respWire); err != nil {
-		return nil, wrap("unpack dns response", err)
+		return nil, E.WithStr("unpack dns response", err)
 	}
 	return
 }
@@ -133,7 +134,7 @@ func doDNSResolve(domain string, dnsMode DNSMode) (string, error) {
 
 	resp, err := dnsExchange(msg)
 	if err != nil {
-		return "", wrap("dns exchange", err)
+		return "", E.WithStr("dns exchange", err)
 	}
 	if resp.Rcode != dns.RcodeSuccess {
 		return "", errors.New("bad rcode: " + dns.RcodeToString[resp.Rcode])
@@ -157,7 +158,7 @@ func doDNSResolve(domain string, dnsMode DNSMode) (string, error) {
 			msg.SetQuestion(domain+".", dns.TypeAAAA)
 			resp, err2 := dnsExchange(msg)
 			if err2 != nil {
-				return "", wrap("dns exchange", errors.Join(err, err2))
+				return "", E.WithStr("dns exchange", errors.Join(err, err2))
 			}
 			if resp.Rcode != dns.RcodeSuccess {
 				return "", errors.New("bad rcode: " + dns.RcodeToString[resp.Rcode])
@@ -173,7 +174,7 @@ func doDNSResolve(domain string, dnsMode DNSMode) (string, error) {
 			msg.SetQuestion(domain+".", dns.TypeA)
 			resp, err2 := dnsExchange(msg)
 			if err2 != nil {
-				return "", wrap("dns exchange", errors.Join(err, err2))
+				return "", E.WithStr("dns exchange", errors.Join(err, err2))
 			}
 			if resp.Rcode != dns.RcodeSuccess {
 				return "", errors.New("bad rcode: " + dns.RcodeToString[resp.Rcode])

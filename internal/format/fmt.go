@@ -1,4 +1,4 @@
-package lumine
+package format
 
 import (
 	"fmt"
@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-func byteToString(b byte) string {
+func Byte(b byte) string {
 	var hexBuf [2]byte
 	const hexDigits = "0123456789abcdef"
 	hexBuf[0] = hexDigits[b>>4]
@@ -14,16 +14,7 @@ func byteToString(b byte) string {
 	return string(hexBuf[:])
 }
 
-func bytesHasPrefix(b []byte, prefixes ...string) bool {
-	for _, prefix := range prefixes {
-		if string(b[:len(prefix)]) == prefix {
-			return true
-		}
-	}
-	return false
-}
-
-func joinString(values ...any) string {
+func Concat(values ...any) string {
 	var builder strings.Builder
 	for _, v := range values {
 		switch val := v.(type) {
@@ -36,23 +27,23 @@ func joinString(values ...any) string {
 		case int:
 			builder.WriteString(strconv.Itoa(val))
 		case int8:
-			builder.WriteString(formatInt(val))
+			builder.WriteString(Int(val))
 		case int16:
-			builder.WriteString(formatInt(val))
+			builder.WriteString(Int(val))
 		case int32:
-			builder.WriteString(formatInt(val))
+			builder.WriteString(Int(val))
 		case int64:
-			builder.WriteString(formatInt(val))
+			builder.WriteString(Int(val))
 		case uint:
-			builder.WriteString(formatUint(val))
+			builder.WriteString(Uint(val))
 		case uint8:
-			builder.WriteString(formatUint(val))
+			builder.WriteString(Uint(val))
 		case uint16:
-			builder.WriteString(formatUint(val))
+			builder.WriteString(Uint(val))
 		case uint32:
-			builder.WriteString(formatUint(val))
+			builder.WriteString(Uint(val))
 		case uint64:
-			builder.WriteString(formatUint(val))
+			builder.WriteString(Uint(val))
 		default:
 			panic("unsupported type")
 		}
@@ -60,10 +51,10 @@ func joinString(values ...any) string {
 	return builder.String()
 }
 
-func formatInt[T int | int8 | int16 | int32 | int64](v T) string {
+func Int[T int | int8 | int16 | int32 | int64](v T) string {
 	return strconv.FormatInt(int64(v), 10)
 }
 
-func formatUint[T uint | uint8 | uint16 | uint32 | uint64](v T) string {
+func Uint[T uint | uint8 | uint16 | uint32 | uint64](v T) string {
 	return strconv.FormatUint(uint64(v), 10)
 }

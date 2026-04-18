@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 
+	E "github.com/moi-si/lumine/internal/errors"
 	log "github.com/moi-si/mylog"
 )
 
@@ -234,7 +235,7 @@ func transformIP(ipStr string, targetNetStr string) (string, error) {
 
 	prefix, err := netip.ParsePrefix(targetNetStr)
 	if err != nil {
-		return "", wrap("invalid target network", err)
+		return "", E.WithStr("invalid target network", err)
 	}
 
 	if ip.Is4() != prefix.Addr().Is4() {
@@ -317,27 +318,16 @@ func ipRedirect(logger *log.Logger, ip string) (string, *Policy, error) {
 func getTCPRawConn(conn net.Conn) (syscall.RawConn, error) {
 	rawConn, err := conn.(*net.TCPConn).SyscallConn()
 	if err != nil {
-		return nil, wrap("get raw conn", err)
+		return nil, E.WithStr("get raw conn", err)
 	}
 	return rawConn, nil
 }
 
-type wrappedError struct {
-	msg   string
-	cause error
-}
-
-func (e *wrappedError) Error() string {
-	return e.msg + ": " + e.cause.Error()
-}
-
-func (e *wrappedError) Unwrap() error {
-	return e.cause
-}
-
-func wrap(msg string, cause error) error {
-	return &wrappedError{
-		msg:   msg,
-		cause: cause,
+func bytesHasPrefix(b []byte, prefixes ...string) bool {
+	for _, prefix := range prefixes {
+		if string(b[:len(prefix)]) == prefix {
+			return true
+		}
 	}
+	return false
 }

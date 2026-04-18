@@ -8,6 +8,8 @@ import (
 	"os"
 	"slices"
 
+	"github.com/moi-si/lumine/internal/dial"
+	F "github.com/moi-si/lumine/internal/format"
 	log "github.com/moi-si/mylog"
 )
 
@@ -97,7 +99,7 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 		return
 	}
 	if header[0] != 0x5 {
-		logger.Error("Expected socks version 5, but got", byteToString(header[0]))
+		logger.Error("Expected socks version 5, but got", F.Byte(header[0]))
 		return
 	}
 
@@ -123,11 +125,11 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 		return
 	}
 	if header[0] != 0x5 {
-		logger.Error("Expected socks version 5, but got", byteToString(header[0]))
+		logger.Error("Expected socks version 5, but got", F.Byte(header[0]))
 		return
 	}
 	if header[1] != 0x1 {
-		logger.Error("Expected cmd CONNECT, but got", byteToString(header[1]))
+		logger.Error("Expected cmd CONNECT, but got", F.Byte(header[1]))
 		sendReply(logger, cliConn, socks5ReplyCmdNotSupported)
 		return
 	}
@@ -170,7 +172,7 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 		}
 		originHost = string(domainBytes)
 	default:
-		logger.Error("Invalid atyp:", byteToString(header[3]))
+		logger.Error("Invalid atyp:", F.Byte(header[3]))
 		sendReply(logger, cliConn, socks5ReplyAtypNotSupported)
 		return
 	}
@@ -192,7 +194,7 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 		return
 	}
 	dstPort := binary.BigEndian.Uint16(portBytes)
-	originPort := formatUint(dstPort)
+	originPort := F.Uint(dstPort)
 	oldTarget := net.JoinHostPort(originHost, originPort)
 
 	logger.Info("CONNECT", oldTarget)
@@ -200,10 +202,10 @@ func socks5Handler(cliConn net.Conn, id uint32) {
 	if policy.Port != 0 && policy.Port != unsetInt {
 		dstPort = uint16(policy.Port)
 	}
-	target := net.JoinHostPort(dstHost, formatUint(dstPort))
+	target := net.JoinHostPort(dstHost, F.Uint(dstPort))
 
 	if policy.ReplyFirst != BoolTrue {
-		dstConn, err = dialTCPTimeout(target, policy.ConnectTimeout)
+		dstConn, err = dial.DialTCPTimeout(target, policy.ConnectTimeout)
 		if err != nil {
 			logger.Error("Connection to", oldTarget, "failed:", err)
 			sendReply(logger, cliConn, socks5ReplyServerFailure)

@@ -5,6 +5,8 @@ import (
 	"net"
 	"strconv"
 	"time"
+
+	E "github.com/moi-si/lumine/internal/errors"
 )
 
 func sendRecords(conn net.Conn, clientHello []byte,
@@ -18,10 +20,10 @@ func sendRecords(conn net.Conn, clientHello []byte,
 	if records == 1 {
 		if oobex {
 			if err := sendWithOOB(conn, clientHello[:15], clientHello[15]); err != nil {
-				return wrap("oob 1", err)
+				return E.WithStr("oob 1", err)
 			}
 			if err := sendWithOOB(conn, clientHello[16:35], 0x0); err != nil {
-				return wrap("oob 2", err)
+				return E.WithStr("oob 2", err)
 			}
 			if err := waitForAck(waitForAckEnabled, conn, interval); err != nil {
 				return err
@@ -31,7 +33,7 @@ func sendRecords(conn net.Conn, clientHello []byte,
 		}
 		if segments == 1 {
 			if _, err := conn.Write(clientHello); err != nil {
-				return wrap("send remaining data", err)
+				return E.WithStr("send remaining data", err)
 			}
 			return nil
 		}
@@ -45,11 +47,11 @@ func sendRecords(conn net.Conn, clientHello []byte,
 		for i, packet := range packets {
 			if i == 0 && oob {
 				if err := sendWithOOB(conn, packet, 0x0); err != nil {
-					return wrap("oob", err)
+					return E.WithStr("oob", err)
 				}
 			} else {
 				if _, err := conn.Write(packet); err != nil {
-					return wrap("write packet "+strconv.Itoa(i+1), err)
+					return E.WithStr("write packet "+strconv.Itoa(i+1), err)
 				}
 			}
 			if err := waitForAck(waitForAckEnabled, conn, interval); err != nil {
@@ -72,21 +74,21 @@ func sendRecords(conn net.Conn, clientHello []byte,
 			if i == 0 {
 				if oob {
 					if err := sendWithOOB(conn, chunk, 0x0); err != nil {
-						return wrap("oob", err)
+						return E.WithStr("oob", err)
 					}
 				} else if oobex {
 					l := len(chunk)
 					if err := sendWithOOB(conn, chunk[:l-1], chunk[l-1]); err != nil {
-						return wrap("oob 1", err)
+						return E.WithStr("oob 1", err)
 					}
 				}
 			} else if i == 1 && oobex {
 				if err := sendWithOOB(conn, chunk, 0x0); err != nil {
-					return wrap("oob 2", err)
+					return E.WithStr("oob 2", err)
 				}
 			} else {
 				if _, err := conn.Write(chunk); err != nil {
-					return wrap("write record "+strconv.Itoa(i+1), err)
+					return E.WithStr("write record "+strconv.Itoa(i+1), err)
 				}
 			}
 			if err := waitForAck(waitForAckEnabled, conn, interval); err != nil {
@@ -103,10 +105,10 @@ func sendRecords(conn net.Conn, clientHello []byte,
 
 	if oobex {
 		if err := sendWithOOB(conn, merged[:15], merged[15]); err != nil {
-			return wrap("oob 1", err)
+			return E.WithStr("oob 1", err)
 		}
 		if err := sendWithOOB(conn, merged[16:35], 0x0); err != nil {
-			return wrap("oob 2", err)
+			return E.WithStr("oob 2", err)
 		}
 		if err := waitForAck(waitForAckEnabled, conn, interval); err != nil {
 			return err
@@ -127,11 +129,11 @@ func sendRecords(conn net.Conn, clientHello []byte,
 		}
 		if i == 0 && oob {
 			if err := sendWithOOB(conn, merged[start:end], 0x0); err != nil {
-				return wrap("oob", err)
+				return E.WithStr("oob", err)
 			}
 		} else {
 			if _, err := conn.Write(merged[start:end]); err != nil {
-				return wrap("write segment "+strconv.Itoa(i+1), err)
+				return E.WithStr("write segment "+strconv.Itoa(i+1), err)
 			}
 		}
 		if err := waitForAck(waitForAckEnabled, conn, interval); err != nil {
