@@ -75,13 +75,9 @@ func getFilteredInterfaces() ([]networkInterface, error) {
 	return interfaces, nil
 }
 
-func isClassicLANIPv4(ip net.IP) bool {
-	return ip[0] == 192 && ip[1] == 168
-}
-
 func selectInterface(interfaces []networkInterface) (*networkInterface, error) {
 	for _, iface := range interfaces {
-		if iface.gateway != "" && iface.ipv4 != nil && isClassicLANIPv4(iface.ipv4) {
+		if iface.gateway != "" && iface.ipv4 != nil && iface.ipv4.IsPrivate() {
 			return &iface, nil
 		}
 	}
