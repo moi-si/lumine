@@ -4,10 +4,12 @@
   "http_address": "127.0.0.1:1225",
   "outbound_local_addr": {
     "enabled": true,
-    "bind_ip": "auto",
+    "bind_ipv4": "auto",
+    "bind_ipv6": "auto",
     "bind_zone": "",
     "detect_network": "udp",
-    "detect_target": "8.8.8.8:53",
+    "detect_ipv4_target": "8.8.8.8:53",
+    "detect_ipv6_target": "[2001:4860:4860::8888]:53",
     "dial_timeout": "5s"
   },
   "dns_addr": "https://987.cloudflare-gateway.com/dns-query",

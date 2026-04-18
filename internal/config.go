@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -71,7 +72,7 @@ func LoadConfig(filePath string) (string, string, error) {
 	file.Close()
 
 	if err := setOutboundLocalAddr(conf.OutboundLocalAddr); err != nil {
-		return "", "", wrap("set outbound local addr", err)
+		fmt.Fprintln(os.Stderr, "Set outbound local addr", err)
 	}
 
 	if conf.LogLevel != "" {

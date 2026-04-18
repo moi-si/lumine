@@ -121,7 +121,7 @@ func (b TriBool) IsTrue() bool {
 }
 
 func (b TriBool) IsUnset() bool {
-	return b.IsUnset()
+	return b == BoolUnset
 }
 
 func (b *TriBool) UnmarshalJSON(data []byte) error {
