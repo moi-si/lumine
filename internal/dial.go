@@ -118,10 +118,10 @@ func setOutboundLocalAddr(option OutboundLocalAddrOption) error {
 	return nil
 }
 
-func dialTimeout(ctx context.Context, detectNetwork, addr string, timeout time.Duration) (net.Conn, error) {
+func dialTimeout(ctx context.Context, network, addr string, timeout time.Duration) (net.Conn, error) {
 	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	return globalDialer.DialContext(timeoutCtx, detectNetwork, addr)
+	return globalDialer.DialContext(timeoutCtx, network, addr)
 }
 
 func dialTCPTimeout(addr string, timeout time.Duration) (net.Conn, error) {

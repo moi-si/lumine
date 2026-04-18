@@ -42,7 +42,7 @@ func SOCKS5Accept(addr *string, serverAddr string, done chan struct{}) {
 		logger.Error("Failed to start SOCKS5 server:", err)
 		return
 	}
-	logger.Info("SOCKS5 proxy server started at", ln.Addr().String())
+	logger.Info("SOCKS5 proxy server started at", ln.Addr())
 
 	var connID uint32
 	for {
@@ -74,7 +74,7 @@ func sendReply(logger *log.Logger, conn net.Conn, reply [10]byte) bool {
 
 func socks5Handler(cliConn net.Conn, id uint32) {
 	logger := log.New(os.Stdout, fmt.Sprintf("[S%05x]", id), log.LstdFlags, logLevel)
-	logger.Info("Connection from", cliConn.RemoteAddr().String())
+	logger.Info("Connection from", cliConn.RemoteAddr())
 
 	var (
 		closeHere = true
