@@ -214,7 +214,7 @@ func handleTLS(logger *log.Logger, recordLen int,
 		sendTLSAlert(logger, cliConn, prtVer, tlsAlertAccessDenied, tlsAlertLevelFatal)
 		return
 	}
-	if p.TLS13Only == BoolTrue && !hasKeyShare {
+	if p.TLS13Only.IsTrue() && !hasKeyShare {
 		logger.Info("Connection blocked: key_share missing from ClientHello")
 		sendTLSAlert(logger, cliConn, prtVer, tlsAlertProtocolVersion, tlsAlertLevelFatal)
 		return
@@ -298,8 +298,8 @@ func handleTLS(logger *log.Logger, recordLen int,
 		case ModeTLSRF:
 			err = sendRecords(dstConn, record, sniStart, sniLen,
 				p.NumRecords, p.NumSegments,
-				p.OOB == BoolTrue, p.OOBEx == BoolTrue,
-				p.ModMinorVer == BoolTrue, p.SendInterval)
+				p.OOB.IsTrue(), p.OOBEx.IsTrue(),
+				p.ModMinorVer.IsTrue(), p.WaitForAck.IsTrue(), p.SendInterval)
 			if err != nil {
 				logger.Error("TLS fragment:", err)
 				return

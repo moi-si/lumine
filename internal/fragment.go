@@ -9,7 +9,8 @@ import (
 
 func sendRecords(conn net.Conn, clientHello []byte,
 	offset, length, records, segments int,
-	oob, oobex, modMinorVer bool, interval time.Duration) error {
+	oob, oobex, modMinorVer, waitForAckEnabled bool,
+	interval time.Duration) error {
 	if modMinorVer {
 		clientHello[2] = 0x4
 	}
@@ -22,8 +23,8 @@ func sendRecords(conn net.Conn, clientHello []byte,
 			if err := sendWithOOB(conn, clientHello[16:35], 0x0); err != nil {
 				return wrap("oob 2", err)
 			}
-			if interval > 0 {
-				time.Sleep(interval)
+			if err := waitForAck(waitForAckEnabled, conn, interval); err != nil {
+				return err
 			}
 			clientHello = clientHello[35:]
 			offset -= 35
@@ -51,8 +52,8 @@ func sendRecords(conn net.Conn, clientHello []byte,
 					return wrap("write packet "+strconv.Itoa(i+1), err)
 				}
 			}
-			if interval > 0 {
-				time.Sleep(interval)
+			if err := waitForAck(waitForAckEnabled, conn, interval); err != nil {
+				return err
 			}
 		}
 		return nil
@@ -73,9 +74,6 @@ func sendRecords(conn net.Conn, clientHello []byte,
 					if err := sendWithOOB(conn, chunk, 0x0); err != nil {
 						return wrap("oob", err)
 					}
-					if interval > 0 {
-						time.Sleep(interval)
-					}
 				} else if oobex {
 					l := len(chunk)
 					if err := sendWithOOB(conn, chunk[:l-1], chunk[l-1]); err != nil {
@@ -90,9 +88,9 @@ func sendRecords(conn net.Conn, clientHello []byte,
 				if _, err := conn.Write(chunk); err != nil {
 					return wrap("write record "+strconv.Itoa(i+1), err)
 				}
-				if interval > 0 {
-					time.Sleep(interval)
-				}
+			}
+			if err := waitForAck(waitForAckEnabled, conn, interval); err != nil {
+				return err
 			}
 		}
 		return nil
@@ -110,8 +108,8 @@ func sendRecords(conn net.Conn, clientHello []byte,
 		if err := sendWithOOB(conn, merged[16:35], 0x0); err != nil {
 			return wrap("oob 2", err)
 		}
-		if interval > 0 {
-			time.Sleep(interval)
+		if err := waitForAck(waitForAckEnabled, conn, interval); err != nil {
+			return err
 		}
 		merged = merged[35:]
 	}
@@ -136,8 +134,8 @@ func sendRecords(conn net.Conn, clientHello []byte,
 				return wrap("write segment "+strconv.Itoa(i+1), err)
 			}
 		}
-		if interval > 0 {
-			time.Sleep(interval)
+		if err := waitForAck(waitForAckEnabled, conn, interval); err != nil {
+			return err
 		}
 	}
 	return nil

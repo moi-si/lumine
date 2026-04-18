@@ -113,6 +113,7 @@
     "mod_minor_ver": true,
     "num_records": 4,
     "num_segs": 1,
+    "wait_for_ack": true,
     "send_interval": "200ms",
     "oob": false,
     "oob_ex": false,
