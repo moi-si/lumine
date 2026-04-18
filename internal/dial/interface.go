@@ -102,11 +102,9 @@ func selectInterfaceManually(interfaces []networkInterface) *networkInterface {
 		}
 		msg += ":"
 		if iface.ipv4 != nil {
-			ipv4Dialer.LocalAddr = &net.TCPAddr{IP: iface.ipv4}
 			msg += " IPv4=" + iface.ipv4.String()
 		}
 		if iface.ipv6 != nil {
-			ipv6Dialer.LocalAddr = &net.TCPAddr{IP: iface.ipv6}
 			msg += " IPv6=" + iface.ipv6.String()
 		}
 		fmt.Println(msg)
