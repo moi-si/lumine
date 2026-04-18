@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/moi-si/lumine/internal/dial"
 	log "github.com/moi-si/mylog"
 )
 
@@ -232,13 +233,12 @@ func (p *IPPool) testIP(index int) (time.Duration, float64) {
 		successCount int64
 		totalLatency time.Duration
 	)
-	dialer := &net.Dialer{Timeout: p.timeout}
 	portStr := strconv.FormatUint(uint64(p.port), 10)
 	addrStr := net.JoinHostPort(p.ips[index], portStr)
 
 	for range p.attempts {
 		start := time.Now()
-		conn, err := dialer.Dial("tcp", addrStr)
+		conn, err := dial.DialTCPTimeout(addrStr, p.timeout)
 		if err != nil {
 			continue
 		}
