@@ -75,18 +75,18 @@ func getFilteredInterfaces() ([]networkInterface, error) {
 	return interfaces, nil
 }
 
-func selectInterface(interfaces []networkInterface) (*networkInterface, error) {
+func selectInterface(interfaces []networkInterface) (*networkInterface, bool) {
 	for _, iface := range interfaces {
 		if iface.gateway != "" && iface.ipv4 != nil && iface.ipv4.IsPrivate() {
-			return &iface, nil
+			return &iface, true
 		}
 	}
 	for _, iface := range interfaces {
 		if iface.gateway != "" && iface.ipv4 != nil {
-			return &iface, nil
+			return &iface, true
 		}
 	}
-	return nil, E.New("no interface with gateway detected")
+	return nil, false
 }
 
 func selectInterfaceManually(interfaces []networkInterface) *networkInterface {

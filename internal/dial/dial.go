@@ -35,12 +35,9 @@ func SelectInterface() error {
 	if err != nil {
 		return err
 	}
-	var iface *networkInterface
-	iface, err = selectInterface(interfaces)
-	if err == errNoInterface {
-		return err
-	} else if err != nil {
-		fmt.Println("Failed to select interface automatically:", err)
+	iface, ok := selectInterface(interfaces)
+	if !ok {
+		fmt.Println("No interface with gateway detected")
 		iface = selectInterfaceManually(interfaces)
 	}
 	if iface.ipv4 != nil {
