@@ -3,9 +3,10 @@
   "socks5_address": "127.0.0.1:1080",
   "http_address": "127.0.0.1:1225",
   "outbound_binding": {
-    "method": "select_interface",
-    "manual_select": true,
-    "update_interval": "20m"
+    "method": "dial_detect",
+    "dial_ipv4_target": "8.8.8.8:53",
+    "dial_ipv6_target": "[2001:4860:4860::8888]:53",
+    "manual_select": true
   },
   "dns_addr": "https://987.cloudflare-gateway.com/dns-query",
   "socks5_for_doh": "",

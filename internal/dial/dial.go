@@ -21,9 +21,9 @@ var (
 func DialContext(ctx context.Context, network, address string) (net.Conn, error) {
 	var dialer *net.Dialer
 	if address[0] == '[' {
-		dialer = globalIPv4Dialer.Load()
-	} else {
 		dialer = globalIPv6Dialer.Load()
+	} else {
+		dialer = globalIPv4Dialer.Load()
 	}
 	return dialer.DialContext(ctx, network, address)
 }

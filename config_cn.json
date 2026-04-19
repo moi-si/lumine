@@ -5,6 +5,8 @@
   "outbound_binding": {
     "method": "select_interface",
     "manual_select": true,
+    "dial_ipv4_target": "8.8.8.8:53",
+    "dial_ipv6_target": "[2001:4860:4860::8888]:53",
     "update_interval": "20m"
   },
   "dns_addr": "https://987.cloudflare-gateway.com/dns-query",
