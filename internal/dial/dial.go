@@ -44,7 +44,6 @@ func laddrMonitor(interval time.Duration, fn func() (net.IP, net.IP, string, err
 		<-ticker.C
 		ipv4, ipv6, zone, err := fn()
 		if err != nil {
-			// TODO: Replace log with another package
 			log.Println("Failed to update local address:", err)
 			continue
 		}
@@ -88,6 +87,9 @@ func SetLocalAddr(o BindingOption) error {
 				return E.New("interface not found: " + o.Zone)
 			}
 			zone = o.Zone
+		} else if o.ManualSelect {
+			selected = interfaces.manualSelect()
+			zone = selected.name
 		} else {
 			selected, ok = interfaces.autoSelect()
 			if !ok {

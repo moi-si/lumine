@@ -40,6 +40,7 @@ func (m *Method) UnmarshalJSON(data []byte) error {
 
 type BindingOption struct {
 	Method         Method
+	ManualSelect   bool
 	Zone           string
 	UpdateInterval time.Duration
 	DialTCP        bool
@@ -59,6 +60,7 @@ func (o *BindingOption) UnmarshalJSON(data []byte) (err error) {
 	}()
 	var tmp struct {
 		Method         Method `json:"method"`
+		ManualSelect   bool   `json:"manual_select"`
 		Zone           string `json:"zone"`
 		UpdateInterval string `json:"update_interval"`
 		DialTCP        bool   `json:"dial_tcp"`
@@ -82,6 +84,7 @@ func (o *BindingOption) UnmarshalJSON(data []byte) (err error) {
 				return fmt.Errorf("parse update_interval %s: %w", tmp.UpdateInterval, err)
 			}
 		}
+		o.ManualSelect = tmp.ManualSelect
 		o.Zone = tmp.Zone
 	case MethodDialDetect:
 		if tmp.UpdateInterval != "" {

@@ -4,6 +4,7 @@
   "http_address": "127.0.0.1:1225",
   "outbound_binding": {
     "method": "select_interface",
+    "manual_select": true,
     "update_interval": "20m"
   },
   "dns_addr": "https://987.cloudflare-gateway.com/dns-query",

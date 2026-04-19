@@ -102,7 +102,7 @@ func (ifaces networkInterfaces) autoSelect() (*networkInterface, bool) {
 }
 
 func (ifaces networkInterfaces) manualSelect() *networkInterface {
-	fmt.Println("\nAvalable Interfaces:")
+	fmt.Println("Avalable Interfaces:")
 	for i, iface := range ifaces {
 		msg := F.Concat("[", i, "] ", iface.name)
 		if iface.gateway != "" {
@@ -118,14 +118,18 @@ func (ifaces networkInterfaces) manualSelect() *networkInterface {
 		fmt.Println(msg)
 	}
 
-	length := len(ifaces)
 	for {
-		fmt.Print(F.Concat("Select index [0-", length-1, "]: "))
+		fmt.Print("Select index: ")
 		var i int
 		_, err := fmt.Scanln(&i)
-		if err == nil && i >= 0 && i < length {
-			return &ifaces[i]
+		if err != nil {
+			fmt.Println(err)
 		}
-		fmt.Println("Invalid index")
+		if i <= 0 || i > len(ifaces) {
+			fmt.Println("Invalid index")
+			continue
+		}
+		fmt.Println()
+		return &ifaces[i]
 	}
 }
