@@ -2,6 +2,7 @@ package dial
 
 import (
 	"fmt"
+	"log"
 	"net"
 
 	E "github.com/moi-si/lumine/internal/errors"
@@ -16,9 +17,11 @@ type networkInterface struct {
 	ipv6    net.IP
 }
 
+type networkInterfaces []networkInterface
+
 var errNoInterface = E.New("no interface detected")
 
-func getFilteredInterfaces() ([]networkInterface, error) {
+func getFilteredInterfaces() (networkInterfaces, error) {
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return nil, E.WithStr("list network interfaces", err)
@@ -32,7 +35,7 @@ func getFilteredInterfaces() ([]networkInterface, error) {
 
 		addrs, err := iface.Addrs()
 		if err != nil {
-			// TODO: Log this error at warn level
+			log.Println("Get unicast interface for", iface.Name+":", err)
 			continue
 		}
 
@@ -75,13 +78,22 @@ func getFilteredInterfaces() ([]networkInterface, error) {
 	return interfaces, nil
 }
 
-func selectInterface(interfaces []networkInterface) (*networkInterface, bool) {
-	for _, iface := range interfaces {
+func (ifaces networkInterfaces) find(name string) (*networkInterface, bool) {
+	for _, iface := range ifaces {
+		if iface.name == name {
+			return &iface, true
+		}
+	}
+	return nil, false
+}
+
+func (ifaces networkInterfaces) autoSelect() (*networkInterface, bool) {
+	for _, iface := range ifaces {
 		if iface.gateway != "" && iface.ipv4 != nil && iface.ipv4.IsPrivate() {
 			return &iface, true
 		}
 	}
-	for _, iface := range interfaces {
+	for _, iface := range ifaces {
 		if iface.gateway != "" && iface.ipv4 != nil {
 			return &iface, true
 		}
@@ -89,30 +101,30 @@ func selectInterface(interfaces []networkInterface) (*networkInterface, bool) {
 	return nil, false
 }
 
-func selectInterfaceManually(interfaces []networkInterface) *networkInterface {
+func (ifaces networkInterfaces) manualSelect() *networkInterface {
 	fmt.Println("\nAvalable Interfaces:")
-	for i, iface := range interfaces {
+	for i, iface := range ifaces {
 		msg := F.Concat("[", i, "] ", iface.name)
 		if iface.gateway != "" {
 			msg += " via " + iface.gateway
 		}
 		msg += ":"
 		if iface.ipv4 != nil {
-			msg += " IPv4=" + iface.ipv4.String()
+			msg += " ipv4=" + iface.ipv4.String()
 		}
 		if iface.ipv6 != nil {
-			msg += " IPv6=" + iface.ipv6.String()
+			msg += " ipv6=" + iface.ipv6.String()
 		}
 		fmt.Println(msg)
 	}
 
-	length := len(interfaces)
+	length := len(ifaces)
 	for {
 		fmt.Print(F.Concat("Select index [0-", length-1, "]: "))
 		var i int
 		_, err := fmt.Scanln(&i)
 		if err == nil && i >= 0 && i < length {
-			return &interfaces[i]
+			return &ifaces[i]
 		}
 		fmt.Println("Invalid index")
 	}

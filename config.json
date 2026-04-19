@@ -2,7 +2,10 @@
   "log_level": "INFO",
   "socks5_address": "127.0.0.1:1080",
   "http_address": "127.0.0.1:1225",
-  "select_interface": true,
+  "outbound_binding": {
+    "method": "select_interface",
+    "update_interval": "20m"
+  },
   "dns_addr": "https://987.cloudflare-gateway.com/dns-query",
   "socks5_for_doh": "",
   "udp_minsize": 4096,
@@ -28,7 +31,7 @@
     "objects-origin.githubusercontent.com": "140.82.113.22",
     "abs-0.twimg.com": "146.75.48.159",
     "video.pscp.tv":  "146.75.34.164",
-     "*telegram.(org|me);t.me": "149.154.161.145",
+    "*telegram.(org|me);t.me": "149.154.161.145",
     "zws5(|-1).web.telegram.org": "149.154.170.200",
     "platform.twitter.com": "146.75.120.157",
     "(cn|purr|et).nytimes.com": "",

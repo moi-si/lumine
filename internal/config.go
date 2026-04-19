@@ -29,7 +29,7 @@ type Config struct {
 	TransmitFileLimit int                `json:"transmit_file_limit"`
 	Socks5Addr        string             `json:"socks5_address"`
 	HttpAddr          string             `json:"http_address"`
-	SelectInterface   bool               `json:"select_interface"`
+	OutboundBinding   dial.BindingOption `json:"outbound_binding"`
 	DNSAddr           string             `json:"dns_addr"`
 	UDPSize           uint16             `json:"udp_minsize"`
 	DoHProxy          string             `json:"socks5_for_doh"`
@@ -71,10 +71,8 @@ func LoadConfig(filePath string) (string, string, error) {
 	}
 	file.Close()
 
-	if conf.SelectInterface {
-		if err := dial.SelectInterface(); err != nil {
-			return "", "", err
-		}
+	if err := dial.SetLocalAddr(conf.OutboundBinding); err != nil {
+		return "", "", err
 	}
 
 	if conf.LogLevel != "" {

@@ -3,6 +3,7 @@ package errors
 import "errors"
 
 var New = errors.New
+var Join = errors.Join
 
 type opError struct {
 	op  string

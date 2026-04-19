@@ -310,8 +310,7 @@ func (p *IPPool) monitor() {
 	ticker := time.NewTicker(p.updateInterval)
 	defer ticker.Stop()
 
-	for {
-		<-ticker.C
+	for range ticker.C {
 		p.scan()
 	}
 }
